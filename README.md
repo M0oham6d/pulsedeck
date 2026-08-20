@@ -199,4 +199,6 @@ PulseDeck does not upload or persist monitoring data. Process command lines can 
 
 ## License
 
-No license has been selected for this prototype yet. Choose and add a license before publishing the project for reuse.
+PulseDeck is licensed under the MIT License.
+
+See the [LICENSE](LICENSE) file for the complete license text.
