@@ -55,6 +55,8 @@ Physical Core 3 -> logical CPUs 3 and 7
 
 Each physical-core usage value is the average of its logical threads. Temperature values are matched by labels such as `Core 0`, not by assuming sensor order. On platforms without topology files, PulseDeck falls back to logical CPU rows.
 
+In wide mode, the CPU panel also shows a compact `LOGICAL THREADS (%)` row. Values are indexed by the operating system's logical CPU number, so `0:42` means logical CPU 0 is currently 42% busy. Physical-core rows remain averages of their mapped logical threads.
+
 ## Process CPU Values
 
 The process table contains two CPU columns: `CPU` and `SHARE`.
@@ -127,13 +129,15 @@ The GPU panel displays:
 - Used and total VRAM
 - Power draw when supported
 
+In compact mode, GPU utilization is shown as a percentage on the GPU name row. Temperature and VRAM usage have separate bars. The `APPS` section lists NVIDIA processes with `PID`, `APPLICATION`, `GPU`, and `MEM` columns. `GPU` and `MEM` are activity percentages from the `pmon` sample, not process VRAM ownership.
+
 Some laptop GPUs do not expose power draw. PulseDeck displays `N/A` instead of `0 W`, because zero would be misleading.
 
 The GPU panel adds `(driver)` to this value when the selected GPU driver reports no power telemetry. This commonly occurs with laptop or hybrid-GPU configurations. A reported power limit is not used as a replacement because it is a configured maximum, not current consumption.
 
 If `nvidia-smi` or `nvidia-smi.exe` is unavailable, PulseDeck checks Linux DRM/sysfs data for AMD and Intel GPUs when running on Linux. If no supported backend is available, CPU and system metrics continue working while the GPU panel reports unavailable data.
 
-For NVIDIA devices, the `APPS` section inside the GPU panel reads `nvidia-smi pmon -c 1`. This includes graphics clients such as desktop compositors as well as compute clients. The `GPU` and `MEM` values are activity percentages from the sampling interval, not total process memory ownership. The list is empty when the driver does not expose process monitoring.
+For NVIDIA devices, the `APPS` section inside the GPU panel reads `nvidia-smi pmon -c 1`. This includes graphics clients such as desktop compositors as well as compute clients. The list is empty when the driver does not expose process monitoring.
 
 ## Memory Metrics
 
@@ -144,6 +148,8 @@ memory_used = memory.total - memory.available
 ```
 
 The memory panel shows RAM and swap used/total values and percentage bars.
+
+In compact mode, RAM and SWAP remain separate rows but use shorter bars so both fit in the narrow memory panel.
 
 ## Temperature Sensors
 

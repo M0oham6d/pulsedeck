@@ -72,10 +72,10 @@ The process `SHARE` value is calculated from normalized process CPU divided by t
 
 ### Rendering
 
-- `render_cpu()` displays the CPU model, totals, physical cores, usage, frequency, temperature, and load.
-- `render_gpu()` displays vendor metrics and handles unavailable values.
+- `render_cpu()` displays the CPU model, totals, physical cores, usage, frequency, temperature, load, and wide-mode logical-thread usage.
+- `render_gpu()` displays vendor metrics, separate compact temperature/VRAM bars, GPU utilization, and handles unavailable values.
 - `render_gpu()` displays active NVIDIA GPU applications in its `APPS` section when process monitoring is available.
-- `render_memory()` displays RAM and swap.
+- `render_memory()` displays RAM and swap, using separate short rows in compact mode.
 - `render_sensors()` displays readable sensor names and battery state.
 - `render_processes()` displays PID, command, CPU, share, RAM percentage, and RSS.
 - `build_layout()` selects wide or compact mode based on terminal width and height.
@@ -86,16 +86,15 @@ Wide mode activates at least 100 columns wide and 28 rows high:
 
 ```text
 ┌──────────────────────┬────────────┐
-│ CPU            │ GPU        │
-│                │ MEMORY     │
-│                │ SENSORS    │
-│                │ GPU        │
+│ CPU                  │ GPU        │
+│                      │ MEMORY     │
+│                      │ SENSORS    │
 ├──────────────────────┴────────────┤
 │ TOP RESOURCE USERS                 │
 └────────────────────────────────────┘
 ```
 
-Compact mode removes the detailed thread column, reduces bar widths, and moves sensor details into the footer. This keeps the CPU, GPU, memory, and process panels usable in smaller terminals.
+Wide mode gives the GPU flexible height, keeps memory at a fixed compact height, and reserves the remaining right-column space for sensors. Compact mode removes the detailed thread column, reduces bar widths, keeps RAM and SWAP on separate rows, and moves sensor details into the footer. This keeps the CPU, GPU, memory, and process panels usable in smaller terminals.
 
 ## Startup Installation
 
