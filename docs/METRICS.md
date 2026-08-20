@@ -129,7 +129,11 @@ The GPU panel displays:
 
 Some laptop GPUs do not expose power draw. PulseDeck displays `N/A` instead of `0 W`, because zero would be misleading.
 
+The GPU panel adds `(driver)` to this value when the selected GPU driver reports no power telemetry. This commonly occurs with laptop or hybrid-GPU configurations. A reported power limit is not used as a replacement because it is a configured maximum, not current consumption.
+
 If `nvidia-smi` or `nvidia-smi.exe` is unavailable, PulseDeck checks Linux DRM/sysfs data for AMD and Intel GPUs when running on Linux. If no supported backend is available, CPU and system metrics continue working while the GPU panel reports unavailable data.
+
+For NVIDIA devices, the `APPS` section inside the GPU panel reads `nvidia-smi pmon -c 1`. This includes graphics clients such as desktop compositors as well as compute clients. The `GPU` and `MEM` values are activity percentages from the sampling interval, not total process memory ownership. The list is empty when the driver does not expose process monitoring.
 
 ## Memory Metrics
 

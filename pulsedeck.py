@@ -196,6 +196,46 @@ def nvidia_gpu_data():
     }
 
 
+def nvidia_gpu_processes():
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "pmon", "-c", "1"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+
+    rows = []
+    for line in result.stdout.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        fields = line.split(None, 9)
+        if len(fields) < 10:
+            continue
+        try:
+            pid = int(fields[1])
+        except ValueError:
+            continue
+        rows.append(
+            {
+                "gpu": fields[0],
+                "pid": pid,
+                "type": fields[2],
+                "sm": number_or_none(fields[3]),
+                "memory": number_or_none(fields[4]),
+                "encoder": number_or_none(fields[5]),
+                "decoder": number_or_none(fields[6]),
+                "command": fields[9].strip(),
+            }
+        )
+    return rows
+
+
 def drm_gpu_data():
     if os.name == "nt":
         return None
@@ -356,9 +396,11 @@ def collect():
     sensors = sensor_data()
     memory = psutil.virtual_memory()
     cpu = cpu_data(sensors)
+    gpu = gpu_data()
     return {
         "cpu": cpu,
-        "gpu": gpu_data(),
+        "gpu": gpu,
+        "gpu_processes": nvidia_gpu_processes() if gpu and gpu["vendor"] == "NVIDIA" else [],
         "memory": memory,
         "memory_used": memory.total - memory.available,
         "swap": psutil.swap_memory(),
@@ -392,7 +434,7 @@ def render_cpu(data, compact=False):
         box=None,
         expand=True,
         padding=(0, 1),
-        show_header=True,
+        show_header=not compact,
         header_style="dim",
     )
     core_table.add_column("CORE", width=6, no_wrap=True)
@@ -430,36 +472,91 @@ def render_gpu(data, compact=False):
     first.append("   ")
     first.append_text(temperature)
     first.append("   POWER ", style="dim")
-    first.append(f"{gpu['power']:.0f} W" if gpu["power"] is not None else "N/A")
+    first.append(
+        f"{gpu['power']:.0f} W" if gpu["power"] is not None else "N/A (driver)"
+    )
 
     usage = gpu["usage"]
     used = gpu["memory_used"]
     total = gpu["memory_total"]
     if compact:
-        second = Text("GPU  ", style="dim")
+        first = Text(f"{gpu['vendor']}  {gpu['name']}", style="bold white", overflow="ellipsis", no_wrap=True)
+        first.append("  GPU ", style="dim")
         if usage is not None:
-            second.append_text(usage_cell(usage, 12))
+            first.append(f"{usage:.1f}%", style=usage_style(usage))
         else:
-            second.append("N/A", style="dim")
-        second.append("   VRAM ", style="dim")
+            first.append("N/A", style="dim")
+        temp_line = Text("TEMP  ", style="dim")
+        if gpu["temp"] is not None:
+            temp_style = temperature_style({"current": gpu["temp"], "critical": 93})
+            temp_line.append_text(bar(gpu["temp"], 12, temp_style))
+            temp_line.append(f" {gpu['temp']:.0f}C", style=temp_style)
+        else:
+            temp_line.append("N/A", style="dim")
+        vram_line = Text("VRAM  ", style="dim")
         if used is not None and total:
-            second.append(f"{used:.0f}/{total:.0f} MiB", style="magenta")
+            vram_line.append_text(bar(used / total * 100, 12, "magenta"))
+            vram_line.append(f" {used:.0f}/{total:.0f} MiB", style="magenta")
         else:
-            second.append("N/A", style="dim")
-        return Panel(Group(first, second), title=" GPU ", border_style="magenta", padding=(0, 1))
+            vram_line.append("N/A", style="dim")
+        processes = data.get("gpu_processes", [])
+        content = [first, temp_line, vram_line, Text("")]
+        content.append(Text("APPS", style="bold dim"))
+        content.append(Text("     PID  APPLICATION       GPU   MEM", style="dim"))
+        if processes:
+            for process in processes:
+                sm = f"{process['sm']:.0f}%" if process["sm"] is not None else "N/A"
+                memory = (
+                    f"{process['memory']:.0f}%"
+                    if process["memory"] is not None
+                    else "N/A"
+                )
+                content.append(
+                    Text(
+                        f"{process['pid']:>8}  {process['command']:<15.15} {sm:>4} {memory:>4}",
+                        overflow="ellipsis",
+                        no_wrap=True,
+                    )
+                )
+        else:
+            content.append(Text("No active GPU applications", style="dim"))
+        return Panel(Group(*content), title=" GPU ", border_style="magenta", padding=(0, 1))
+    else:
+        usage_line = Text("UTIL  ", style="dim")
+        if usage is not None:
+            usage_line.append_text(usage_cell(usage, 18))
+        else:
+            usage_line.append("N/A", style="dim")
+        memory_line = Text("VRAM  ", style="dim")
+        if used is not None and total:
+            memory_line.append_text(bar(used / total * 100, 18, "magenta"))
+            memory_line.append(f" {used:.0f}/{total:.0f} MiB", style="magenta")
+        else:
+            memory_line.append("N/A", style="dim")
+        content = [first, usage_line, memory_line]
 
-    usage_line = Text("UTIL  ", style="dim")
-    if usage is not None:
-        usage_line.append_text(usage_cell(usage, 18))
+    content.append(Text(""))
+    content.append(Text("APPS", style="bold dim"))
+    content.append(Text("     PID  APPLICATION       GPU   MEM", style="dim"))
+    processes = data.get("gpu_processes", [])
+    if processes:
+        for process in processes:
+            sm = f"{process['sm']:.0f}%" if process["sm"] is not None else "N/A"
+            memory = (
+                f"{process['memory']:.0f}%"
+                if process["memory"] is not None
+                else "N/A"
+            )
+            content.append(
+                Text(
+                    f"{process['pid']:>8}  {process['command']:<15.15} {sm:>4} {memory:>4}",
+                    overflow="ellipsis",
+                    no_wrap=True,
+                )
+            )
     else:
-        usage_line.append("N/A", style="dim")
-    memory_line = Text("VRAM  ", style="dim")
-    if used is not None and total:
-        memory_line.append_text(bar(used / total * 100, 18, "magenta"))
-        memory_line.append(f" {used:.0f}/{total:.0f} MiB", style="magenta")
-    else:
-        memory_line.append("N/A", style="dim")
-    return Panel(Group(first, usage_line, memory_line), title=" GPU ", border_style="magenta", padding=(0, 1))
+        content.append(Text("No active GPU applications", style="dim"))
+    return Panel(Group(*content), title=" GPU ", border_style="magenta", padding=(0, 1))
 
 
 def render_memory(data, compact=False):
@@ -467,11 +564,11 @@ def render_memory(data, compact=False):
     used = data["memory_used"]
     swap = data["swap"]
     ram_line = Text("RAM   ", style="dim")
-    ram_line.append_text(bar(memory.percent, 12 if compact else 18, "green"))
+    ram_line.append_text(bar(memory.percent, 5 if compact else 18, "green"))
     ram_line.append(f" {bytes_value(used)}/{bytes_value(memory.total)}", style="green")
     swap_line = Text("SWAP  ", style="dim")
     if swap.total:
-        swap_line.append_text(bar(swap.percent, 12 if compact else 18, "yellow"))
+        swap_line.append_text(bar(swap.percent, 5 if compact else 18, "yellow"))
         swap_line.append(f" {bytes_value(swap.used)}/{bytes_value(swap.total)}", style="yellow")
     else:
         swap_line.append("disabled", style="dim")
@@ -560,28 +657,28 @@ def build_layout(data, width, height):
 
     if wide:
         layout["main"].split_column(
-            Layout(name="dashboard", ratio=3),
-            Layout(name="processes", ratio=2),
+            Layout(name="dashboard", ratio=4),
+            Layout(name="processes", ratio=3),
         )
         layout["dashboard"].split_row(
             Layout(name="cpu", ratio=3),
             Layout(name="side", ratio=2),
         )
         layout["side"].split_column(
-            Layout(name="gpu", ratio=2),
-            Layout(name="memory", ratio=2),
-            Layout(name="sensors", ratio=2),
+            Layout(name="gpu", ratio=8),
+            Layout(name="memory", size=4),
+            Layout(name="sensors", ratio=3),
         )
-        layout["cpu"].update(render_cpu(data))
-        layout["gpu"].update(render_gpu(data))
-        layout["memory"].update(render_memory(data))
+        layout["cpu"].update(render_cpu(data, compact=True))
+        layout["gpu"].update(render_gpu(data, compact=True))
+        layout["memory"].update(render_memory(data, compact=True))
         layout["sensors"].update(render_sensors(data))
         layout["processes"].update(render_processes(data))
         layout["footer"].update(Align.center(Text("q / Esc  quit", style="dim")))
     else:
         layout["main"].split_column(
-            Layout(name="cpu", size=9),
-            Layout(name="gpu", size=4),
+            Layout(name="cpu", size=8),
+            Layout(name="gpu", size=11),
             Layout(name="memory", size=4),
             Layout(name="processes"),
         )

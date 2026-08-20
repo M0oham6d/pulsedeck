@@ -31,6 +31,7 @@ pulsedeck/
 | Temperatures | `psutil.sensors_temperatures()` when supported |
 | Battery | `psutil.sensors_battery()` |
 | NVIDIA GPU metrics | `nvidia-smi` / `nvidia-smi.exe` |
+| NVIDIA GPU processes | `nvidia-smi pmon -c 1` |
 | AMD/Intel GPU metrics | Linux DRM/sysfs |
 | Process metrics | `psutil.process_iter()` |
 
@@ -56,6 +57,7 @@ The loop refreshes approximately once per second.
 
 - `sensor_data()` reads and preserves temperature labels and limits.
 - `nvidia_gpu_data()` queries NVIDIA with `nvidia-smi`.
+- `nvidia_gpu_processes()` reads NVIDIA compute and graphics clients with `nvidia-smi pmon`.
 - `drm_gpu_data()` detects AMD and Intel devices through Linux DRM/sysfs interfaces.
 - `gpu_data()` selects the first available backend and converts unsupported values to `None`.
 - `cpu_data()` samples CPU usage, reads frequency/load, and creates physical-core rows.
@@ -72,6 +74,7 @@ The process `SHARE` value is calculated from normalized process CPU divided by t
 
 - `render_cpu()` displays the CPU model, totals, physical cores, usage, frequency, temperature, and load.
 - `render_gpu()` displays vendor metrics and handles unavailable values.
+- `render_gpu()` displays active NVIDIA GPU applications in its `APPS` section when process monitoring is available.
 - `render_memory()` displays RAM and swap.
 - `render_sensors()` displays readable sensor names and battery state.
 - `render_processes()` displays PID, command, CPU, share, RAM percentage, and RSS.
@@ -83,9 +86,10 @@ Wide mode activates at least 100 columns wide and 28 rows high:
 
 ```text
 ┌──────────────────────┬────────────┐
-│ CPU                  │ GPU        │
-│                      │ MEMORY     │
-│                      │ SENSORS    │
+│ CPU            │ GPU        │
+│                │ MEMORY     │
+│                │ SENSORS    │
+│                │ GPU        │
 ├──────────────────────┴────────────┤
 │ TOP RESOURCE USERS                 │
 └────────────────────────────────────┘

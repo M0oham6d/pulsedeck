@@ -1,6 +1,7 @@
 import importlib.util
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SOURCE = Path(__file__).parents[1] / "pulsedeck.py"
@@ -24,6 +25,40 @@ class PulseDeckTests(unittest.TestCase):
         self.assertIsNone(MODULE.number_or_none("N/A"))
         self.assertIsNone(MODULE.number_or_none("[N/A]"))
         self.assertEqual(MODULE.number_or_none("42.5"), 42.5)
+
+    @patch.object(MODULE.subprocess, "run")
+    def test_nvidia_gpu_processes_parse_graphics_clients(self, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = (
+            "# gpu         pid   type     sm    mem    enc    dec    jpg    ofa    command\n"
+            "    0       2075   C+G      -      -      -      0      -      -    kwin_wayland\n"
+            "    0      67182   C+G     10      5     16      -      -      -    obs\n"
+        )
+        self.assertEqual(
+            MODULE.nvidia_gpu_processes(),
+            [
+                {
+                    "gpu": "0",
+                    "pid": 2075,
+                    "type": "C+G",
+                    "sm": None,
+                    "memory": None,
+                    "encoder": None,
+                    "decoder": 0.0,
+                    "command": "kwin_wayland",
+                },
+                {
+                    "gpu": "0",
+                    "pid": 67182,
+                    "type": "C+G",
+                    "sm": 10.0,
+                    "memory": 5.0,
+                    "encoder": 16.0,
+                    "decoder": None,
+                    "command": "obs",
+                },
+            ],
+        )
 
     def test_byte_formatting(self):
         self.assertEqual(MODULE.bytes_value(1024), "1.0 KiB")
