@@ -109,6 +109,7 @@ The repository's `monitor.sh` is portable and launches the local `pulsedeck.py` 
 
 On Windows, `install_windows.ps1` creates a private virtual environment under `%LOCALAPPDATA%\PulseDeck\venv`, installs the dependencies, creates `pulsedeck.cmd`, and adds the installation directory to the user's PATH. Windows does not use `monitor.sh`, KDE, or Konsole autostart.
 
+
 ## Error Handling
 
 - Missing or failing GPU tools disable only the affected GPU backend.

@@ -183,6 +183,7 @@ pulsedeck/
     └── ARCHITECTURE.md
 ```
 
+
 ## Limitations
 
 - GPU metrics use NVIDIA `nvidia-smi` or Linux DRM/sysfs data for AMD and Intel when available.
