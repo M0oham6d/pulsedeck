@@ -1,6 +1,6 @@
 # PulseDeck
 
-PulseDeck is a responsive Linux terminal dashboard for CPU, GPU, memory, temperatures, battery status, and running processes.
+PulseDeck is a responsive Linux and Windows terminal dashboard for CPU, GPU, memory, temperatures, battery status, and running processes.
 
 It combines the useful parts of `nvtop` and `watch sensors` into one terminal interface built with Python, `psutil`, and `rich`.
 
@@ -10,8 +10,9 @@ It combines the useful parts of `nvtop` and `watch sensors` into one terminal in
 - Responsive compact and wide layouts
 - CPU usage, frequency, load average, package temperature, physical cores, and logical-thread mapping
 - NVIDIA GPU utilization, temperature, VRAM, and power when available
+- AMD and Intel GPU detection through Linux DRM/sysfs when available
 - RAM and swap usage
-- NVMe, chipset, Wi-Fi, and battery sensors when exposed by Linux
+- NVMe, chipset, Wi-Fi, CPU, and battery sensors when exposed by the operating system
 - Top resource-consuming processes with PID, command, CPU, CPU share, RAM, and RSS
 - CPU values normalized against total machine capacity
 - Color-coded usage and temperature values
@@ -154,7 +155,7 @@ Exit the live dashboard with `q`, `Esc`, or `Ctrl-C`.
 - **SHARE**: percentage of currently active CPU work attributed to a process.
 - **TOTAL**: average utilization across all logical CPUs.
 - **PACKAGE**: whole-CPU package temperature.
-- **LOAD**: one-minute Linux load average, which is different from CPU percentage.
+- **LOAD**: one-minute system load average when the platform provides it; it is different from CPU percentage.
 
 For the complete formulas and examples, see [`docs/METRICS.md`](docs/METRICS.md).
 

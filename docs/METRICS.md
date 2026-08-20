@@ -1,6 +1,6 @@
 # PulseDeck Metrics
 
-This document explains what each value means and how PulseDeck calculates it.
+This document explains what each value means and how PulseDeck calculates it on Linux and Windows.
 
 ## CPU Panel
 
@@ -27,17 +27,17 @@ Frequency can change quickly because of power management, Turbo Boost, workload,
 
 ### Package Temperature
 
-`PACKAGE` is the temperature reported for the whole CPU package by the Linux `coretemp` driver. It is not the temperature of a single core.
+`PACKAGE` is the temperature reported for the whole CPU package by a supported hardware sensor. On Linux this commonly comes from the `coretemp` driver. Windows may not expose package or per-core temperatures, in which case the value is shown as `N/A`.
 
 ### Load Average
 
-`LOAD` is the one-minute Linux load average returned by `os.getloadavg()`.
+`LOAD` is the one-minute system load average returned by `os.getloadavg()` when the platform provides it. Windows may not expose this value, so it can be unavailable.
 
 Load average is not the same as CPU utilization. It represents runnable or waiting work, so disk or other resource contention can increase load even when CPU usage is not 100%.
 
 ### Physical Cores And Logical Threads
 
-PulseDeck reads CPU topology from:
+On Linux, PulseDeck reads CPU topology from:
 
 ```text
 /sys/devices/system/cpu/cpu*/topology/physical_package_id
@@ -53,7 +53,7 @@ Physical Core 2 -> logical CPUs 2 and 6
 Physical Core 3 -> logical CPUs 3 and 7
 ```
 
-Each physical-core usage value is the average of its logical threads. Temperature values are matched by labels such as `Core 0`, not by assuming sensor order.
+Each physical-core usage value is the average of its logical threads. Temperature values are matched by labels such as `Core 0`, not by assuming sensor order. On platforms without topology files, PulseDeck falls back to logical CPU rows.
 
 ## Process CPU Values
 
@@ -129,7 +129,7 @@ The GPU panel displays:
 
 Some laptop GPUs do not expose power draw. PulseDeck displays `N/A` instead of `0 W`, because zero would be misleading.
 
-If `nvidia-smi` is unavailable, PulseDeck checks Linux DRM/sysfs data for AMD and Intel GPUs. If no supported backend is available, CPU and system metrics continue working while the GPU panel reports unavailable data.
+If `nvidia-smi` or `nvidia-smi.exe` is unavailable, PulseDeck checks Linux DRM/sysfs data for AMD and Intel GPUs when running on Linux. If no supported backend is available, CPU and system metrics continue working while the GPU panel reports unavailable data.
 
 ## Memory Metrics
 
@@ -143,7 +143,7 @@ The memory panel shows RAM and swap used/total values and percentage bars.
 
 ## Temperature Sensors
 
-PulseDeck reads `psutil.sensors_temperatures()` and maps common Linux sensor groups to readable labels:
+PulseDeck reads `psutil.sensors_temperatures()` when the platform supports it and maps common Linux sensor groups to readable labels:
 
 | Linux group | Display label |
 | --- | --- |
@@ -153,7 +153,7 @@ PulseDeck reads `psutil.sensors_temperatures()` and maps common Linux sensor gro
 | `iwlwifi_*` | Wi-Fi |
 | Other groups | Converted sensor group name |
 
-If a sensor supplies a critical limit, PulseDeck uses it. Otherwise, general sensors use a 90°C fallback.
+Windows commonly has fewer temperature sensors available through `psutil`, so missing CPU and device temperatures are normal. If a sensor supplies a critical limit, PulseDeck uses it. Otherwise, general sensors use a 90°C fallback.
 
 Temperature colors use these thresholds:
 

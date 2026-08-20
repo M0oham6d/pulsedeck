@@ -1,6 +1,6 @@
 # PulseDeck Architecture
 
-PulseDeck is intentionally implemented as a small single-file terminal application. It uses standard Linux interfaces plus two Python dependencies.
+PulseDeck is intentionally implemented as a small single-file cross-platform terminal application. It uses standard platform interfaces plus two Python dependencies.
 
 ## Repository Structure
 
@@ -9,6 +9,8 @@ pulsedeck/
 ├── pulsedeck.py       # collectors, calculations, renderers, live loop
 ├── monitor.sh         # portable launcher
 ├── install.sh         # per-user installation and autostart setup
+├── install_windows.ps1 # Windows installer
+├── run_windows.ps1    # Windows repository launcher
 ├── requirements.txt   # psutil and rich
 ├── README.md          # quick-start documentation
 ├── tests/              # compatibility and calculation tests
@@ -22,13 +24,13 @@ pulsedeck/
 
 | Data | Source |
 | --- | --- |
-| CPU model | `/proc/cpuinfo` |
-| CPU topology | `/sys/devices/system/cpu/cpu*/topology` |
+| CPU model | `/proc/cpuinfo` on Linux, `platform` on Windows |
+| CPU topology | Linux `/sys` when available, logical-CPU fallback elsewhere |
 | CPU usage and frequency | `psutil` |
 | Memory and swap | `psutil` |
-| Temperatures | `psutil.sensors_temperatures()` |
+| Temperatures | `psutil.sensors_temperatures()` when supported |
 | Battery | `psutil.sensors_battery()` |
-| NVIDIA GPU metrics | `nvidia-smi` |
+| NVIDIA GPU metrics | `nvidia-smi` / `nvidia-smi.exe` |
 | AMD/Intel GPU metrics | Linux DRM/sysfs |
 | Process metrics | `psutil.process_iter()` |
 
@@ -104,6 +106,8 @@ It performs these actions:
 5. Creates `pulsedeck.desktop` with the installing user's paths.
 
 The repository's `monitor.sh` is portable and launches the local `pulsedeck.py` beside it. The installed launcher is generated separately so the installed command can be launched from any directory.
+
+On Windows, `install_windows.ps1` creates a private virtual environment under `%LOCALAPPDATA%\PulseDeck\venv`, installs the dependencies, creates `pulsedeck.cmd`, and adds the installation directory to the user's PATH. Windows does not use `monitor.sh`, KDE, or Konsole autostart.
 
 ## Error Handling
 
