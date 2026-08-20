@@ -113,7 +113,7 @@ The visible process rows do not necessarily add up to 100% `SHARE`, because only
 
 ## GPU Metrics
 
-GPU data is collected with:
+NVIDIA GPU data is collected with:
 
 ```bash
 nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total,power.draw --format=csv,noheader,nounits
@@ -129,7 +129,7 @@ The GPU panel displays:
 
 Some laptop GPUs do not expose power draw. PulseDeck displays `N/A` instead of `0 W`, because zero would be misleading.
 
-If `nvidia-smi` is unavailable, CPU and system metrics continue working while the GPU panel reports unavailable data.
+If `nvidia-smi` is unavailable, PulseDeck checks Linux DRM/sysfs data for AMD and Intel GPUs. If no supported backend is available, CPU and system metrics continue working while the GPU panel reports unavailable data.
 
 ## Memory Metrics
 

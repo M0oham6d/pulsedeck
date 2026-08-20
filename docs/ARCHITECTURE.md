@@ -11,6 +11,8 @@ pulsedeck/
 ├── install.sh         # per-user installation and autostart setup
 ├── requirements.txt   # psutil and rich
 ├── README.md          # quick-start documentation
+├── tests/              # compatibility and calculation tests
+│   └── test_pulsedeck.py
 └── docs/
     ├── METRICS.md     # metric definitions and formulas
     └── ARCHITECTURE.md
@@ -26,7 +28,8 @@ pulsedeck/
 | Memory and swap | `psutil` |
 | Temperatures | `psutil.sensors_temperatures()` |
 | Battery | `psutil.sensors_battery()` |
-| GPU metrics | `nvidia-smi` |
+| NVIDIA GPU metrics | `nvidia-smi` |
+| AMD/Intel GPU metrics | Linux DRM/sysfs |
 | Process metrics | `psutil.process_iter()` |
 
 ## Refresh Pipeline
@@ -37,7 +40,7 @@ Each refresh performs these steps:
 2. Read RAM and swap statistics.
 3. Read per-logical-CPU usage and frequency.
 4. Map logical CPUs to physical cores.
-5. Query NVIDIA metrics with a two-second timeout.
+5. Query the available GPU backend with a two-second timeout.
 6. Read process metrics.
 7. Normalize process CPU values and calculate CPU share.
 8. Build a Rich layout based on terminal dimensions.
@@ -50,7 +53,9 @@ The loop refreshes approximately once per second.
 ### Collection
 
 - `sensor_data()` reads and preserves temperature labels and limits.
-- `gpu_data()` executes `nvidia-smi`, parses CSV output, and converts unsupported numeric values to `None`.
+- `nvidia_gpu_data()` queries NVIDIA with `nvidia-smi`.
+- `drm_gpu_data()` detects AMD and Intel devices through Linux DRM/sysfs interfaces.
+- `gpu_data()` selects the first available backend and converts unsupported values to `None`.
 - `cpu_data()` samples CPU usage, reads frequency/load, and creates physical-core rows.
 - `process_data()` reads process information, filters dead/zombie processes, normalizes CPU values, and sorts resource users.
 - `collect()` combines all values into one snapshot passed to the renderers.
@@ -64,7 +69,7 @@ The process `SHARE` value is calculated from normalized process CPU divided by t
 ### Rendering
 
 - `render_cpu()` displays the CPU model, totals, physical cores, usage, frequency, temperature, and load.
-- `render_gpu()` displays NVIDIA metrics and handles unavailable values.
+- `render_gpu()` displays vendor metrics and handles unavailable values.
 - `render_memory()` displays RAM and swap.
 - `render_sensors()` displays readable sensor names and battery state.
 - `render_processes()` displays PID, command, CPU, share, RAM percentage, and RSS.
@@ -102,8 +107,8 @@ The repository's `monitor.sh` is portable and launches the local `pulsedeck.py` 
 
 ## Error Handling
 
-- Missing or failing `nvidia-smi` disables only GPU data.
-- Unsupported NVIDIA values become `N/A`.
+- Missing or failing GPU tools disable only the affected GPU backend.
+- Unsupported vendor values become `N/A`.
 - Missing temperature sensors produce an empty sensor section instead of crashing.
 - Processes that disappear during collection or deny access are skipped.
 - Missing frequency information is displayed as unavailable.
@@ -134,8 +139,9 @@ Recommended future automated tests:
 
 ## Portability Notes
 
-- GPU collection currently supports NVIDIA only.
-- Multi-GPU rendering is not implemented; the first `nvidia-smi` row is used.
+- GPU collection supports NVIDIA and Linux DRM/sysfs fallbacks for AMD and Intel.
+- Multi-GPU rendering is not implemented; the first available GPU backend is used.
 - Sensor group names differ between hardware vendors and kernel drivers.
 - The program is designed for Linux and relies on `/proc`, `/sys`, and Linux sensor APIs.
-- The installer uses the current user's local Python environment and does not require root.
+- The installer creates a private user virtual environment and does not require root.
+- Distributions that package `venv` separately may require their `python3-venv` package.

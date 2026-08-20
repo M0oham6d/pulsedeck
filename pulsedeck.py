@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import glob
 import os
 import platform
 import re
 import select
+import shutil
 import subprocess
 import sys
-import termios
 import time
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,11 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+try:
+    import termios
+except ImportError:
+    termios = None
+
 
 REFRESH_SECONDS = 1.0
 
@@ -31,6 +37,14 @@ def read_text(path, default=""):
         return Path(path).read_text().strip()
     except OSError:
         return default
+
+
+def read_number(path):
+    value = read_text(path)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def cpu_model():
@@ -47,9 +61,12 @@ def cpu_topology():
         Path("/sys/devices/system/cpu").glob("cpu[0-9]*"),
         key=lambda path: int(path.name[3:]),
     ):
-        logical = int(cpu_path.name[3:])
-        package = int(read_text(cpu_path / "topology/physical_package_id", "0"))
-        core = int(read_text(cpu_path / "topology/core_id", str(logical)))
+        try:
+            logical = int(cpu_path.name[3:])
+            package = int(read_text(cpu_path / "topology/physical_package_id", "0"))
+            core = int(read_text(cpu_path / "topology/core_id", str(logical)))
+        except ValueError:
+            continue
         cores.setdefault((package, core), []).append(logical)
     if not cores:
         count = psutil.cpu_count(logical=True) or 1
@@ -89,8 +106,10 @@ def temperature_style(sensor, fallback_critical=90):
 def bar(percent, width=14, style=None):
     percent = max(0.0, min(float(percent), 100.0))
     filled = round(percent / 100 * width)
-    result = Text("█" * filled, style=style or usage_style(percent))
-    result.append("░" * (width - filled), style="grey23")
+    full = "#" if os.environ.get("PULSEDECK_ASCII") else "█"
+    empty = "." if os.environ.get("PULSEDECK_ASCII") else "░"
+    result = Text(full * filled, style=style or usage_style(percent))
+    result.append(empty * (width - filled), style="grey23")
     return result
 
 
@@ -121,7 +140,7 @@ def sensor_data():
                 }
                 for i, entry in enumerate(entries)
             ]
-    except (AttributeError, OSError):
+    except (AttributeError, NotImplementedError, OSError):
         pass
     return sensors
 
@@ -136,7 +155,7 @@ def number_or_none(value):
         return None
 
 
-def gpu_data():
+def nvidia_gpu_data():
     command = [
         "nvidia-smi",
         "--query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total,power.draw",
@@ -158,6 +177,7 @@ def gpu_data():
     if len(row) < 6:
         return None
     return {
+        "vendor": "NVIDIA",
         "name": row[0].strip(),
         "temp": number_or_none(row[1]),
         "usage": number_or_none(row[2]),
@@ -167,20 +187,70 @@ def gpu_data():
     }
 
 
+def drm_gpu_data():
+    for card in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):
+        vendor_id = read_text(os.path.join(card, "vendor")).lower()
+        if vendor_id not in ("0x1002", "0x8086"):
+            continue
+        vendor = "AMD" if vendor_id == "0x1002" else "Intel"
+        name = read_text(os.path.join(card, "uevent"), "")
+        model = ""
+        for line in name.splitlines():
+            if line.startswith("PCI_ID="):
+                model = f"{vendor} GPU ({line.split('=', 1)[1]})"
+                break
+        usage = read_number(os.path.join(card, "gpu_busy_percent"))
+        memory_used = read_number(os.path.join(card, "mem_info_vram_used"))
+        memory_total = read_number(os.path.join(card, "mem_info_vram_total"))
+        temperature = None
+        for hwmon in glob.glob(os.path.join(card, "hwmon", "hwmon*")):
+            for input_path in glob.glob(os.path.join(hwmon, "temp*_input")):
+                value = read_number(input_path)
+                if value is not None:
+                    temperature = value / 1000
+                    break
+            if temperature is not None:
+                break
+        return {
+            "vendor": vendor,
+            "name": model or f"{vendor} GPU",
+            "temp": temperature,
+            "usage": usage,
+            "memory_used": memory_used / 1024 if memory_used is not None else None,
+            "memory_total": memory_total / 1024 if memory_total is not None else None,
+            "power": None,
+        }
+    return None
+
+
+def gpu_data():
+    return nvidia_gpu_data() or drm_gpu_data()
+
+
+def normalize_process_cpu(raw_cpu, logical_cpu_count, total_cpu_usage):
+    capacity = min(raw_cpu / max(logical_cpu_count, 1), 100.0)
+    share = (
+        min(capacity / total_cpu_usage * 100, 100.0)
+        if total_cpu_usage > 0.1
+        else 0.0
+    )
+    return capacity, share
+
+
 def cpu_data(sensors):
     logical_usage = psutil.cpu_percent(interval=None, percpu=True)
     total_usage = sum(logical_usage) / len(logical_usage) if logical_usage else 0.0
     frequency = psutil.cpu_freq()
     core_sensors = {}
     package_sensor = None
-    for sensor in sensors.get("coretemp", []):
-        label = sensor["label"].lower()
-        if "package" in label:
-            package_sensor = sensor
-            continue
-        match = re.search(r"core\s+(\d+)", label)
-        if match:
-            core_sensors[int(match.group(1))] = sensor
+    for group, entries in sensors.items():
+        for sensor in entries:
+            label = sensor["label"].lower()
+            if any(token in label for token in ("package", "tdie", "tctl", "cpu temp", "cpu thermal")):
+                package_sensor = package_sensor or sensor
+            match = re.search(r"(?:core|ccd)\s*(\d+)", label)
+            if match:
+                core_sensors[int(match.group(1))] = sensor
 
     cores = []
     for item in CPU_TOPOLOGY:
@@ -204,7 +274,7 @@ def cpu_data(sensors):
         "cores": cores,
         "frequency": frequency.current if frequency else None,
         "frequency_max": frequency.max if frequency and frequency.max else None,
-        "load": os.getloadavg(),
+        "load": os.getloadavg() if hasattr(os, "getloadavg") else (0.0, 0.0, 0.0),
         "package_temperature": package_sensor,
         "logical_count": len(logical_usage),
     }
@@ -221,11 +291,8 @@ def process_data(total_cpu_usage, limit=16):
                 continue
             command = " ".join(info["cmdline"] or []) or f"[{info['name'] or '?'}]"
             raw_cpu = info["cpu_percent"] or 0.0
-            cpu_capacity = min(raw_cpu / logical_cpu_count, 100.0)
-            cpu_share = (
-                min(cpu_capacity / total_cpu_usage * 100, 100.0)
-                if total_cpu_usage > 0.1
-                else 0.0
+            cpu_capacity, cpu_share = normalize_process_cpu(
+                raw_cpu, logical_cpu_count, total_cpu_usage
             )
             rows.append(
                 {
@@ -247,7 +314,7 @@ def extra_sensor_rows(sensors):
     rows = []
     nvme_index = 1
     for group, entries in sensors.items():
-        if group == "coretemp":
+        if group.lower() in ("coretemp", "k10temp", "zenpower", "cpu_thermal"):
             continue
         if group == "nvme":
             for sensor in entries:
@@ -267,6 +334,13 @@ def extra_sensor_rows(sensors):
     return rows
 
 
+def battery_data():
+    try:
+        return psutil.sensors_battery()
+    except (AttributeError, NotImplementedError, OSError):
+        return None
+
+
 def collect():
     sensors = sensor_data()
     memory = psutil.virtual_memory()
@@ -278,7 +352,7 @@ def collect():
         "memory_used": memory.total - memory.available,
         "swap": psutil.swap_memory(),
         "sensors": extra_sensor_rows(sensors),
-        "battery": psutil.sensors_battery(),
+        "battery": battery_data(),
         "processes": process_data(cpu["usage"]),
     }
 
@@ -335,24 +409,27 @@ def render_cpu(data, compact=False):
 def render_gpu(data, compact=False):
     gpu = data["gpu"]
     if gpu is None:
-        return Panel(Text("NVIDIA data unavailable", style="dim"), title=" GPU ", border_style="magenta")
+        return Panel(Text("GPU data unavailable", style="dim"), title=" GPU ", border_style="magenta")
 
     temperature = Text("N/A", style="dim")
     if gpu["temp"] is not None:
         sensor = {"current": gpu["temp"], "critical": 93}
         temperature = Text(f"{gpu['temp']:.0f}°C", style=temperature_style(sensor, 93))
-    first = Text(gpu["name"], style="bold white", overflow="ellipsis", no_wrap=True)
+    first = Text(f"{gpu['vendor']}  {gpu['name']}", style="bold white", overflow="ellipsis", no_wrap=True)
     first.append("   ")
     first.append_text(temperature)
     first.append("   POWER ", style="dim")
     first.append(f"{gpu['power']:.0f} W" if gpu["power"] is not None else "N/A")
 
-    usage = gpu["usage"] or 0.0
+    usage = gpu["usage"]
     used = gpu["memory_used"]
     total = gpu["memory_total"]
     if compact:
         second = Text("GPU  ", style="dim")
-        second.append_text(usage_cell(usage, 12))
+        if usage is not None:
+            second.append_text(usage_cell(usage, 12))
+        else:
+            second.append("N/A", style="dim")
         second.append("   VRAM ", style="dim")
         if used is not None and total:
             second.append(f"{used:.0f}/{total:.0f} MiB", style="magenta")
@@ -361,7 +438,10 @@ def render_gpu(data, compact=False):
         return Panel(Group(first, second), title=" GPU ", border_style="magenta", padding=(0, 1))
 
     usage_line = Text("UTIL  ", style="dim")
-    usage_line.append_text(usage_cell(usage, 18))
+    if usage is not None:
+        usage_line.append_text(usage_cell(usage, 18))
+    else:
+        usage_line.append("N/A", style="dim")
     memory_line = Text("VRAM  ", style="dim")
     if used is not None and total:
         memory_line.append_text(bar(used / total * 100, 18, "magenta"))
@@ -534,7 +614,7 @@ def main():
         return
 
     saved_terminal = None
-    if sys.stdin.isatty():
+    if sys.stdin.isatty() and termios is not None:
         saved_terminal = termios.tcgetattr(sys.stdin)
         raw_terminal = saved_terminal[:]
         raw_terminal[3] &= ~(termios.ICANON | termios.ECHO)
@@ -554,7 +634,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        if saved_terminal is not None:
+        if saved_terminal is not None and termios is not None:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, saved_terminal)
 
 
