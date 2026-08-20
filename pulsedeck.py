@@ -28,6 +28,11 @@ try:
 except ImportError:
     termios = None
 
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
 
 REFRESH_SECONDS = 1.0
 
@@ -52,13 +57,17 @@ def cpu_model():
         if line.startswith("model name"):
             model = line.split(":", 1)[1].strip()
             return model.replace("(R)", "").replace("(TM)", "")
-    return platform.processor() or "CPU"
+    return platform.processor() or platform.uname().processor or "CPU"
 
 
 def cpu_topology():
     cores = {}
+    if os.name != "nt":
+        cpu_paths = Path("/sys/devices/system/cpu").glob("cpu[0-9]*")
+    else:
+        cpu_paths = []
     for cpu_path in sorted(
-        Path("/sys/devices/system/cpu").glob("cpu[0-9]*"),
+        cpu_paths,
         key=lambda path: int(path.name[3:]),
     ):
         try:
@@ -188,6 +197,8 @@ def nvidia_gpu_data():
 
 
 def drm_gpu_data():
+    if os.name == "nt":
+        return None
     for card in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):
         vendor_id = read_text(os.path.join(card, "vendor")).lower()
         if vendor_id not in ("0x1002", "0x8086"):
@@ -583,6 +594,10 @@ def build_layout(data, width, height):
 
 
 def key_pressed():
+    if os.name == "nt" and msvcrt is not None:
+        if msvcrt.kbhit():
+            return msvcrt.getwch()
+        return None
     if sys.stdin.isatty() and select.select([sys.stdin], [], [], 0)[0]:
         return sys.stdin.read(1)
     return None

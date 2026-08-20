@@ -142,6 +142,7 @@ Recommended future automated tests:
 - GPU collection supports NVIDIA and Linux DRM/sysfs fallbacks for AMD and Intel.
 - Multi-GPU rendering is not implemented; the first available GPU backend is used.
 - Sensor group names differ between hardware vendors and kernel drivers.
-- The program is designed for Linux and relies on `/proc`, `/sys`, and Linux sensor APIs.
+- Linux uses `/proc`, `/sys`, and Linux sensor APIs; Windows falls back to platform-neutral `psutil` metrics.
+- Windows installation uses `install_windows.ps1` and a private virtual environment.
 - The installer creates a private user virtual environment and does not require root.
 - Distributions that package `venv` separately may require their `python3-venv` package.

@@ -29,9 +29,16 @@ It combines the useful parts of `nvtop` and `watch sensors` into one terminal in
 ╰─────────────────────────────────────────────────────────╯╰──────────────────────╯
 ```
 
+## Supported Platforms
+
+- Linux distributions with Python 3, `psutil`, and `rich`
+- Windows 10 and Windows 11 with Python 3
+
+Linux exposes more hardware sensors and GPU interfaces, so Linux generally provides more complete metrics. Windows still supports the platform-neutral CPU, memory, process, battery, and optional NVIDIA metrics.
+
 ## Requirements
 
-- Linux
+- Linux or Windows
 - Python 3.9 or newer recommended
 - Python virtual-environment support (`venv`)
 - Python packages `psutil` and `rich`
@@ -44,7 +51,7 @@ On Fedora:
 sudo dnf install python3 python3-psutil python3-rich
 ```
 
-## Installation
+## Linux Installation
 
 Clone or download this repository, enter the project directory, and run:
 
@@ -61,6 +68,63 @@ The installer:
 - Creates a KDE/GNOME-compatible autostart entry
 
 The installer does not require root privileges.
+
+## Windows Installation
+
+PulseDeck supports Windows 10 and Windows 11 with Python 3.9 or newer.
+
+Install Python from <https://www.python.org/downloads/windows/> and enable **Add Python to PATH** during installation.
+
+Open PowerShell in the project directory and run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\install_windows.ps1
+```
+
+The Windows installer:
+
+- Creates a private virtual environment under `%LOCALAPPDATA%\PulseDeck\venv`
+- Installs `psutil` and `rich`
+- Installs PulseDeck under `%LOCALAPPDATA%\PulseDeck`
+- Creates `pulsedeck.cmd`
+- Adds the installation directory to the current user's PATH
+
+Open a new PowerShell window after installation and run:
+
+```powershell
+pulsedeck
+```
+
+One snapshot:
+
+```powershell
+pulsedeck --once
+```
+
+To run directly from the repository instead:
+
+```powershell
+py -3 -m pip install -r requirements.txt
+py -3 .\pulsedeck.py
+```
+
+Windows uses `psutil` for CPU, frequency, memory, swap/page-file, process, and battery metrics. NVIDIA GPU metrics are available when `nvidia-smi.exe` is installed and available in `PATH`:
+
+```powershell
+nvidia-smi
+```
+
+The following Linux-specific features may show `N/A` on Windows:
+
+- `/proc` CPU details
+- `/sys` CPU topology details
+- Linux hardware temperature sensors
+- AMD and Intel Linux DRM/sysfs GPU metrics
+- CPU package and per-core temperatures
+- KDE/Konsole autostart
+
+The dashboard continues running when these values are unavailable. Windows keyboard input uses `msvcrt`, while Linux uses terminal input support through `termios`.
 
 ## Usage
 
@@ -109,6 +173,8 @@ pulsedeck/
 ├── install.sh
 ├── requirements.txt
 ├── .gitignore
+├── install_windows.ps1
+├── run_windows.ps1
 ├── tests/
 │   └── test_pulsedeck.py
 └── docs/
