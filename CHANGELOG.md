@@ -5,6 +5,7 @@
 - Fix Windows tests when optional temperature APIs are unavailable.
 - Fall back to ASCII dashboard bars on legacy Windows console encodings.
 - Fix Ruff checks for generated build files and source formatting.
+- Improve Linux and Windows installation instructions and align the documentation with the implemented metrics and platform behavior.
 
 ## 0.3.0
 
