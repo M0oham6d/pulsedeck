@@ -31,7 +31,7 @@ class PulseDeckTests(unittest.TestCase):
     def test_nvidia_gpu_timeout_is_treated_as_unavailable(self, run):
         self.assertIsNone(MODULE.nvidia_gpu_data())
 
-    @patch.object(MODULE.psutil, "sensors_temperatures", side_effect=OSError)
+    @patch.object(MODULE.psutil, "sensors_temperatures", side_effect=OSError, create=True)
     def test_sensor_failure_returns_empty_data(self, sensors_temperatures):
         self.assertEqual(MODULE.sensor_data(), {})
 
