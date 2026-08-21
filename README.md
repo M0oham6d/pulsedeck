@@ -189,7 +189,7 @@ pulsedeck/
     └── ARCHITECTURE.md
 ```
 
-The current release version is `0.3.0`. See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
+The current release version is `0.3.1`. See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
 
 
 ## Limitations

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Fix Windows tests when optional temperature APIs are unavailable.
+- Fall back to ASCII dashboard bars on legacy Windows console encodings.
+- Fix Ruff checks for generated build files and source formatting.
+
 ## 0.3.0
 
 - Run GPU collection in a background sampler so delayed NVIDIA tools do not block the dashboard.
