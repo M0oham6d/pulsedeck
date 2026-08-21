@@ -1,9 +1,9 @@
+#!/usr/bin/env python3
 import importlib.util
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-
 
 SOURCE = Path(__file__).parents[1] / "pulsedeck.py"
 SPEC = importlib.util.spec_from_file_location("pulsedeck", SOURCE)

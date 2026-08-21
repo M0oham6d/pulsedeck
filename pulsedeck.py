@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 import argparse
 import csv
-from concurrent.futures import ThreadPoolExecutor
 import glob
 import os
 import platform
 import re
 import select
-import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -293,7 +292,7 @@ def gpu_snapshot():
     if _gpu_future is not None and _gpu_future.done():
         try:
             _gpu_snapshot = _gpu_future.result()
-        except Exception:
+        except Exception:  # noqa: BLE001 - a failed optional probe must not stop rendering
             _gpu_snapshot = (None, [])
         _gpu_future = None
         _gpu_sampled_at = now
@@ -323,7 +322,7 @@ def cpu_data(sensors):
     frequency = psutil.cpu_freq()
     core_sensors = {}
     package_sensor = None
-    for group, entries in sensors.items():
+    for entries in sensors.values():
         for sensor in entries:
             label = sensor["label"].lower()
             if any(token in label for token in ("package", "tdie", "tctl", "cpu temp", "cpu thermal")):
@@ -779,7 +778,7 @@ def build_layout(data, width, height):
         Layout(name="footer", size=1),
     )
     title = Text(
-        f" PULSEDECK  //  {platform.node()}  //  {datetime.now():%Y-%m-%d %H:%M:%S} ",
+        f" PULSEDECK  //  {platform.node()}  //  {datetime.now().astimezone():%Y-%m-%d %H:%M:%S} ",
         style="bold cyan",
     )
     layout["header"].update(Align.center(title))
