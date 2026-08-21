@@ -73,6 +73,13 @@ class PulseDeckTests(unittest.TestCase):
         self.assertEqual(MODULE.bytes_value(1024), "1.0 KiB")
         self.assertEqual(MODULE.bytes_value(1024**2), "1.0 MiB")
 
+    def test_output_configuration_detects_legacy_encoding(self):
+        with patch.object(
+            MODULE.sys, "stdout", SimpleNamespace(encoding="cp1252")
+        ), patch.dict(MODULE.os.environ, {}, clear=True):
+            MODULE.configure_output()
+            self.assertEqual(MODULE.os.environ["PULSEDECK_ASCII"], "1")
+
     @patch.object(MODULE.time, "monotonic", side_effect=[100.0, 102.0])
     @patch.object(MODULE.psutil, "net_if_stats")
     @patch.object(MODULE.psutil, "net_io_counters")

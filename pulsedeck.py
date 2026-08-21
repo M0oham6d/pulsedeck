@@ -848,8 +848,18 @@ def arguments():
     return parser.parse_args()
 
 
+def configure_output():
+    encoding = getattr(sys.stdout, "encoding", None)
+    if encoding:
+        try:
+            "█░".encode(encoding)
+        except UnicodeEncodeError:
+            os.environ.setdefault("PULSEDECK_ASCII", "1")
+
+
 def main():
     args = arguments()
+    configure_output()
     console = Console()
     prime_process_counters()
     time.sleep(0.15)
