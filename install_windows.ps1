@@ -21,11 +21,11 @@ if (-not (Test-Path (Join-Path $VenvDir "Scripts\python.exe"))) {
 }
 
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
-& $VenvPython -m pip install -r (Join-Path $ProjectDir "requirements.txt")
-Copy-Item (Join-Path $ProjectDir "pulsedeck.py") (Join-Path $InstallDir "pulsedeck.py") -Force
+& $VenvPython -m pip install $ProjectDir
 
 $Launcher = Join-Path $InstallDir "pulsedeck.cmd"
-$LauncherContent = "@echo off`r`n`"$VenvPython`" `"$InstallDir\pulsedeck.py`" %*`r`n"
+$VenvCommand = Join-Path $VenvDir "Scripts\pulsedeck.exe"
+$LauncherContent = "@echo off`r`n`"$VenvCommand`" %*`r`n"
 Set-Content -Path $Launcher -Value $LauncherContent -Encoding ASCII
 
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")

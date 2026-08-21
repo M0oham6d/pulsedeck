@@ -12,6 +12,8 @@ It combines the useful parts of `nvtop` and `watch sensors` into one terminal in
 - NVIDIA GPU utilization, temperature, VRAM, and power when available
 - AMD and Intel GPU detection through Linux DRM/sysfs when available
 - RAM and swap usage
+- Active network interfaces with upload/download rates
+- Filesystem disk usage and free space
 - NVMe, chipset, Wi-Fi, CPU, and battery sensors when exposed by the operating system
 - Top resource-consuming processes with PID, command, CPU, CPU share, RAM, and RSS
 - CPU values normalized against total machine capacity
@@ -69,6 +71,9 @@ The installer:
 - Creates a KDE/GNOME-compatible autostart entry
 
 The installer does not require root privileges.
+
+Set `PULSEDECK_BIN_DIR` to choose a different per-user executable directory. The default is
+`~/.local/bin`; application data and the virtual environment remain under `XDG_DATA_HOME`.
 
 ## Windows Installation
 
@@ -173,6 +178,7 @@ pulsedeck/
 ├── monitor.sh
 ├── install.sh
 ├── requirements.txt
+├── pyproject.toml
 ├── .gitignore
 ├── install_windows.ps1
 ├── run_windows.ps1
@@ -182,6 +188,8 @@ pulsedeck/
     ├── METRICS.md
     └── ARCHITECTURE.md
 ```
+
+The current release version is `0.3.0`. See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
 
 
 ## Limitations

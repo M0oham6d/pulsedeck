@@ -34,6 +34,8 @@ pulsedeck/
 | NVIDIA GPU processes | `nvidia-smi pmon -c 1` |
 | AMD/Intel GPU metrics | Linux DRM/sysfs |
 | Process metrics | `psutil.process_iter()` |
+| Network rates | `psutil.net_io_counters()` and `psutil.net_if_stats()` |
+| Disk space | `psutil.disk_partitions()` and `psutil.disk_usage()` |
 
 ## Refresh Pipeline
 
@@ -43,13 +45,15 @@ Each refresh performs these steps:
 2. Read RAM and swap statistics.
 3. Read per-logical-CPU usage and frequency.
 4. Map logical CPUs to physical cores.
-5. Query the available GPU backend with a two-second timeout.
+5. Schedule the available GPU backend in a background sampler and use the latest completed sample.
 6. Read process metrics.
 7. Normalize process CPU values and calculate CPU share.
 8. Build a Rich layout based on terminal dimensions.
 9. Render the updated screen.
 
-The loop refreshes approximately once per second.
+The UI loop refreshes approximately once per second. GPU sampling runs approximately every three
+seconds so a slow `nvidia-smi` process cannot block rendering; the last completed sample is shown
+while a new sample is pending.
 
 ## Main Code Areas
 
@@ -58,10 +62,13 @@ The loop refreshes approximately once per second.
 - `sensor_data()` reads and preserves temperature labels and limits.
 - `nvidia_gpu_data()` queries NVIDIA with `nvidia-smi`.
 - `nvidia_gpu_processes()` reads NVIDIA compute and graphics clients with `nvidia-smi pmon`.
+- `gpu_snapshot()` runs both NVIDIA queries in a single bounded background worker and caches the last result.
 - `drm_gpu_data()` detects AMD and Intel devices through Linux DRM/sysfs interfaces.
 - `gpu_data()` selects the first available backend and converts unsupported values to `None`.
 - `cpu_data()` samples CPU usage, reads frequency/load, and creates physical-core rows.
 - `process_data()` reads process information, filters dead/zombie processes, normalizes CPU values, and sorts resource users.
+- `network_data()` samples active interface counters and calculates upload/download rates between refreshes.
+- `disk_data()` reads only the OS-root filesystem capacity and skips inaccessible or duplicate mount points.
 - `collect()` combines all values into one snapshot passed to the renderers.
 
 ### Normalization
@@ -94,7 +101,7 @@ Wide mode activates at least 100 columns wide and 28 rows high:
 └────────────────────────────────────┘
 ```
 
-Wide mode gives the GPU flexible height, keeps memory at a fixed compact height, and reserves the remaining right-column space for sensors. Compact mode removes the detailed thread column, reduces bar widths, keeps RAM and SWAP on separate rows, and moves sensor details into the footer. This keeps the CPU, GPU, memory, and process panels usable in smaller terminals.
+Wide mode gives the GPU flexible height, keeps memory at a fixed compact height, reserves the remaining right-column space for sensors, and uses the spare CPU-panel area for network and disk information. Compact mode hides the system panel, removes the detailed thread column, reduces bar widths, keeps RAM and SWAP on separate rows, and moves sensor details into the footer. This keeps the CPU, GPU, memory, and process panels usable in smaller terminals.
 
 ## Startup Installation
 
@@ -103,10 +110,9 @@ Wide mode gives the GPU flexible height, keeps memory at a fixed compact height,
 It performs these actions:
 
 1. Creates the user's local bin and autostart directories.
-2. Installs `psutil` and `rich` from `requirements.txt`.
-3. Installs the executable as `~/.local/bin/pulsedeck`.
-4. Installs the launcher as `~/.local/bin/pulsedeck-monitor.sh`.
-5. Creates `pulsedeck.desktop` with the installing user's paths.
+2. Installs the project and its `psutil` and `rich` dependencies from `pyproject.toml`.
+3. Installs the executable as `~/.local/bin/pulsedeck` (or `$PULSEDECK_BIN_DIR`).
+4. Creates `pulsedeck.desktop` with the installing user's paths.
 
 The repository's `monitor.sh` is portable and launches the local `pulsedeck.py` beside it. The installed launcher is generated separately so the installed command can be launched from any directory.
 

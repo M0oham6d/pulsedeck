@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+from concurrent.futures import ThreadPoolExecutor
 import glob
 import os
 import platform
@@ -35,6 +36,13 @@ except ImportError:
 
 
 REFRESH_SECONDS = 1.0
+GPU_REFRESH_SECONDS = 3.0
+
+_gpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pulsedeck-gpu")
+_gpu_future = None
+_gpu_snapshot = (None, [])
+_gpu_sampled_at = 0.0
+_network_sample = None
 
 
 def read_text(path, default=""):
@@ -278,6 +286,27 @@ def gpu_data():
     return nvidia_gpu_data() or drm_gpu_data()
 
 
+def gpu_snapshot():
+    """Return cached GPU data while the potentially slow probe runs in the background."""
+    global _gpu_future, _gpu_snapshot, _gpu_sampled_at
+    now = time.monotonic()
+    if _gpu_future is not None and _gpu_future.done():
+        try:
+            _gpu_snapshot = _gpu_future.result()
+        except Exception:
+            _gpu_snapshot = (None, [])
+        _gpu_future = None
+        _gpu_sampled_at = now
+    if _gpu_future is None and now - _gpu_sampled_at >= GPU_REFRESH_SECONDS:
+        _gpu_future = _gpu_executor.submit(
+            lambda: (
+                (gpu := gpu_data()),
+                nvidia_gpu_processes() if gpu and gpu["vendor"] == "NVIDIA" else [],
+            )
+        )
+    return _gpu_snapshot
+
+
 def normalize_process_cpu(raw_cpu, logical_cpu_count, total_cpu_usage):
     capacity = min(raw_cpu / max(logical_cpu_count, 1), 100.0)
     share = (
@@ -392,20 +421,83 @@ def battery_data():
         return None
 
 
+def network_data():
+    """Return active interfaces and byte rates calculated from the previous sample."""
+    global _network_sample
+    now = time.monotonic()
+    counters = psutil.net_io_counters(pernic=True)
+    stats = psutil.net_if_stats()
+    current = {
+        name: (counter.bytes_sent, counter.bytes_recv)
+        for name, counter in counters.items()
+        if stats.get(name) and stats[name].isup and name != "lo"
+    }
+    elapsed = now - _network_sample[0] if _network_sample else 0.0
+    interfaces = []
+    for name, (sent, received) in sorted(current.items()):
+        upload = download = None
+        if _network_sample and elapsed > 0:
+            previous = _network_sample[1].get(name)
+            if previous:
+                upload = max(0, sent - previous[0]) / elapsed
+                download = max(0, received - previous[1]) / elapsed
+        interfaces.append(
+            {
+                "name": name,
+                "upload": upload,
+                "download": download,
+            }
+        )
+    _network_sample = (now, current)
+    return interfaces
+
+
+def disk_data():
+    rows = []
+    seen = set()
+    root_mount = os.path.abspath(os.sep)
+    try:
+        partitions = psutil.disk_partitions(all=False)
+    except (OSError, RuntimeError):
+        return rows
+    for partition in partitions:
+        if os.path.abspath(partition.mountpoint) != root_mount:
+            continue
+        if partition.mountpoint in seen:
+            continue
+        seen.add(partition.mountpoint)
+        try:
+            usage = psutil.disk_usage(partition.mountpoint)
+        except (OSError, PermissionError):
+            continue
+        rows.append(
+            {
+                "mountpoint": partition.mountpoint,
+                "percent": usage.percent,
+                "used": usage.used,
+                "total": usage.total,
+                "free": usage.free,
+            }
+        )
+    return rows
+
+
 def collect():
     sensors = sensor_data()
     memory = psutil.virtual_memory()
     cpu = cpu_data(sensors)
-    gpu = gpu_data()
+    gpu, gpu_processes = gpu_snapshot()
     return {
         "cpu": cpu,
         "gpu": gpu,
-        "gpu_processes": nvidia_gpu_processes() if gpu and gpu["vendor"] == "NVIDIA" else [],
+        "gpu_processes": gpu_processes,
         "memory": memory,
         "memory_used": memory.total - memory.available,
         "swap": psutil.swap_memory(),
         "sensors": extra_sensor_rows(sensors),
         "battery": battery_data(),
+        "network": network_data(),
+        "disks": disk_data(),
         "processes": process_data(cpu["usage"]),
     }
 
@@ -625,6 +717,43 @@ def render_processes(data, compact=False):
     )
 
 
+def rate_value(value):
+    return "N/A" if value is None else f"{bytes_value(value)}/s"
+
+
+def render_system(data):
+    content = [Text("NETWORK", style="bold dim")]
+    network = data["network"]
+    if network:
+        for interface in network[:4]:
+            content.append(
+                Text(
+                    f"{interface['name']:<10.10}  UP {rate_value(interface['upload']):>12}"
+                    f"  DOWN {rate_value(interface['download']):>12}",
+                    overflow="ellipsis",
+                    no_wrap=True,
+                )
+            )
+    else:
+        content.append(Text("No active interfaces", style="dim"))
+
+    content.append(Text(""))
+    content.append(Text("DISKS", style="bold dim"))
+    if data["disks"]:
+        for disk in data["disks"][:4]:
+            content.append(
+                Text(
+                    f"{disk['mountpoint']:<16.16}  {bar(disk['percent'], 8, 'yellow')}"
+                    f" {disk['percent']:5.1f}%  {bytes_value(disk['free'])} free",
+                    overflow="ellipsis",
+                    no_wrap=True,
+                )
+            )
+    else:
+        content.append(Text("No disk data", style="dim"))
+    return Panel(Group(*content), title=" SYSTEM ", border_style="yellow", padding=(0, 1))
+
+
 def sensor_footer(data):
     text = Text()
     for index, (name, sensor) in enumerate(data["sensors"]):
@@ -664,12 +793,17 @@ def build_layout(data, width, height):
             Layout(name="cpu", ratio=3),
             Layout(name="side", ratio=2),
         )
+        layout["cpu"].split_column(
+            Layout(name="cpu_main", ratio=3),
+            Layout(name="system", ratio=2),
+        )
         layout["side"].split_column(
             Layout(name="gpu", ratio=8),
             Layout(name="memory", size=4),
             Layout(name="sensors", ratio=3),
         )
-        layout["cpu"].update(render_cpu(data, compact=True))
+        layout["cpu_main"].update(render_cpu(data, compact=True))
+        layout["system"].update(render_system(data))
         layout["gpu"].update(render_gpu(data, compact=True))
         layout["memory"].update(render_memory(data, compact=True))
         layout["sensors"].update(render_sensors(data))

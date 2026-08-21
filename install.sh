@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local}/bin"
+INSTALL_DIR="${PULSEDECK_BIN_DIR:-$HOME/.local/bin}"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/pulsedeck"
 VENV_DIR="$DATA_DIR/venv"
 AUTOSTART_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
@@ -18,12 +18,11 @@ if [ ! -x "$VENV_DIR/bin/python" ]; then
     python3 -m venv "$VENV_DIR"
 fi
 
-"$VENV_DIR/bin/python" -m pip install -r "$PROJECT_DIR/requirements.txt"
-install -m 755 "$PROJECT_DIR/pulsedeck.py" "$INSTALL_DIR/pulsedeck.py"
+"$VENV_DIR/bin/python" -m pip install "$PROJECT_DIR"
 
 cat > "$INSTALL_DIR/pulsedeck" <<EOF
 #!/usr/bin/env bash
-exec "$VENV_DIR/bin/python" "$INSTALL_DIR/pulsedeck.py" "\$@"
+exec "$VENV_DIR/bin/pulsedeck" "\$@"
 EOF
 chmod 755 "$INSTALL_DIR/pulsedeck"
 

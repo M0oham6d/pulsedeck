@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsedeck"
+version = "0.3.0"
+description = "Cross-platform terminal dashboard for system resource monitoring"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+authors = [{name = "PulseDeck contributors"}]
+dependencies = [
+    "psutil>=5.9,<7",
+    "rich>=13.0,<15",
+]
+
+[project.scripts]
+pulsedeck = "pulsedeck:main"
+
+[tool.setuptools]
+py-modules = ["pulsedeck"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
