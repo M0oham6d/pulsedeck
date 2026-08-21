@@ -68,7 +68,7 @@ while a new sample is pending.
 - `cpu_data()` samples CPU usage, reads frequency/load, and creates physical-core rows.
 - `process_data()` reads process information, filters dead/zombie processes, normalizes CPU values, and sorts resource users.
 - `network_data()` samples active interface counters and calculates upload/download rates between refreshes.
-- `disk_data()` reads only the OS-root filesystem capacity and skips inaccessible or duplicate mount points.
+- `disk_data()` reads only the OS-root filesystem capacity and skips inaccessible or duplicate root mount points.
 - `collect()` combines all values into one snapshot passed to the renderers.
 
 ### Normalization
@@ -79,7 +79,7 @@ The process `SHARE` value is calculated from normalized process CPU divided by t
 
 ### Rendering
 
-- `render_cpu()` displays the CPU model, totals, physical cores, usage, frequency, temperature, load, and wide-mode logical-thread usage.
+- `render_cpu()` displays the CPU model, totals, physical cores, mapped thread IDs, usage, frequency, temperature, and load.
 - `render_gpu()` displays vendor metrics, separate compact temperature/VRAM bars, GPU utilization, and handles unavailable values.
 - `render_gpu()` displays active NVIDIA GPU applications in its `APPS` section when process monitoring is available.
 - `render_memory()` displays RAM and swap, using separate short rows in compact mode.
@@ -109,10 +109,10 @@ Wide mode gives the GPU flexible height, keeps memory at a fixed compact height,
 
 It performs these actions:
 
-1. Creates the user's local bin and autostart directories.
+1. Creates the user's local bin and application-data directories.
 2. Installs the project and its `psutil` and `rich` dependencies from `pyproject.toml`.
 3. Installs the executable as `~/.local/bin/pulsedeck` (or `$PULSEDECK_BIN_DIR`).
-4. Creates `pulsedeck.desktop` with the installing user's paths.
+4. Creates `pulsedeck.desktop` with the installing user's paths when `konsole` is available; otherwise it reports that autostart was skipped.
 
 The repository's `monitor.sh` is portable and launches the local `pulsedeck.py` beside it. The installed launcher is generated separately so the installed command can be launched from any directory.
 

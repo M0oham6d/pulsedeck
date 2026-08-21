@@ -31,7 +31,7 @@ Frequency can change quickly because of power management, Turbo Boost, workload,
 
 ### Load Average
 
-`LOAD` is the one-minute system load average returned by `os.getloadavg()` when the platform provides it. Windows may not expose this value, so it can be unavailable.
+`LOAD` is the one-minute system load average returned by `os.getloadavg()` when the platform provides it. On Windows, PulseDeck uses `(0.0, 0.0, 0.0)` because Windows does not provide `os.getloadavg()`, so the dashboard displays `LOAD 0.00`; this is not a measured Windows load value.
 
 Load average is not the same as CPU utilization. It represents runnable or waiting work, so disk or other resource contention can increase load even when CPU usage is not 100%.
 
@@ -53,9 +53,7 @@ Physical Core 2 -> logical CPUs 2 and 6
 Physical Core 3 -> logical CPUs 3 and 7
 ```
 
-Each physical-core usage value is the average of its logical threads. Temperature values are matched by labels such as `Core 0`, not by assuming sensor order. On platforms without topology files, PulseDeck falls back to logical CPU rows.
-
-In wide mode, the CPU panel also shows a compact `LOGICAL THREADS (%)` row. Values are indexed by the operating system's logical CPU number, so `0:42` means logical CPU 0 is currently 42% busy. Physical-core rows remain averages of their mapped logical threads.
+Each physical-core usage value is the average of its logical threads. Temperature values are matched by labels such as `Core 0`, not by assuming sensor order. On platforms without topology files, PulseDeck falls back to one row per logical CPU. The current renderer displays mapped thread IDs in the CPU table; it does not display a separate per-logical-thread usage table.
 
 ## Process CPU Values
 
@@ -141,7 +139,7 @@ For NVIDIA devices, the `APPS` section inside the GPU panel reads `nvidia-smi pm
 
 ## Memory Metrics
 
-RAM usage is calculated as:
+The used RAM amount shown by PulseDeck is calculated as:
 
 ```python
 memory_used = memory.total - memory.available
@@ -149,7 +147,7 @@ memory_used = memory.total - memory.available
 
 The memory panel shows RAM and swap used/total values and percentage bars.
 
-In compact mode, RAM and SWAP remain separate rows but use shorter bars so both fit in the narrow memory panel.
+In compact mode, RAM and SWAP remain separate rows but use shorter bars so both fit in the narrow memory panel. Swap is shown as `disabled` when the operating system reports no swap.
 
 ## Temperature Sensors
 
@@ -175,10 +173,10 @@ Temperature colors use these thresholds:
 
 At startup, PulseDeck primes the `psutil` CPU counters and waits briefly before collecting the first real sample. This avoids the usual first-sample problem where process CPU values are zero or unreliable.
 
-The live refresh interval is approximately one second and is configured by:
+The live UI refresh interval is approximately one second and is configured by:
 
 ```python
 REFRESH_SECONDS = 1.0
 ```
 
-Measurements are samples. They can change between refreshes as processes start, stop, sleep, migrate between CPUs, or change frequency.
+Measurements are samples. They can change between refreshes as processes start, stop, sleep, migrate between CPUs, or change frequency. GPU probes are cached and sampled approximately every three seconds, so the first render can show no GPU data until the first background probe completes.

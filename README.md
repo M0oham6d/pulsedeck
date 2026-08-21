@@ -1,140 +1,170 @@
 # PulseDeck
 
-PulseDeck is a responsive Linux and Windows terminal dashboard for CPU, GPU, memory, temperatures, battery status, and running processes.
+PulseDeck is a cross-platform terminal dashboard for CPU, GPU, memory, temperatures, battery status, networking, disk space, and running processes. It is a small Python application built with `psutil` and `rich`.
 
-It combines the useful parts of `nvtop` and `watch sensors` into one terminal interface built with Python, `psutil`, and `rich`.
+## What It Shows
 
-## Features
-
-- Live dashboard refreshed approximately once per second
-- Responsive compact and wide layouts
-- CPU usage, frequency, load average, package temperature, physical cores, and logical-thread mapping
-- NVIDIA GPU utilization, temperature, VRAM, and power when available
-- AMD and Intel GPU detection through Linux DRM/sysfs when available
+- Live readings refreshed approximately every second
+- Compact and wide layouts selected from the terminal size
+- CPU utilization, current/max frequency, one-minute load, package temperature, physical-core rows, and logical-thread mapping where the operating system exposes it
+- NVIDIA utilization, temperature, VRAM, power draw, and active GPU applications when `nvidia-smi` is available
+- AMD and Intel GPU data through Linux DRM/sysfs when available
 - RAM and swap usage
-- Active network interfaces with upload/download rates
-- Filesystem disk usage and free space
-- NVMe, chipset, Wi-Fi, CPU, and battery sensors when exposed by the operating system
-- Top resource-consuming processes with PID, command, CPU, CPU share, RAM, and RSS
-- CPU values normalized against total machine capacity
+- Up to four active network interfaces with upload/download rates
+- The operating system root filesystem's usage and free space
+- Available NVMe, chipset, Wi-Fi, CPU, and battery sensor readings
+- Top 16 processes sorted by normalized CPU usage, with PID, command, CPU, CPU share, RAM percentage, and RSS
 - Color-coded usage and temperature values
-- `q`, `Esc`, and `Ctrl-C` exit controls
-- One-shot output with `--once`
 
-## Preview
-
-```text
-                         PULSEDECK  //  hostname  //  2026-08-20 09:40:24
-╭──────────────────────────── CPU ────────────────────────╮╭──────── GPU ────────╮
-│ Intel Core i5-9300H CPU @ 2.40GHz                       ││ GTX 1050   42°C      │
-│ TOTAL 21.0%  1.30/4.10 GHz  PACKAGE 48°C  LOAD 1.43     ││ UTIL  0.0%           │
-│ Core 0  0,4  ███░░░░░░░  16.4%                    49°C   ││ VRAM  9/3072 MiB      │
-╰─────────────────────────────────────────────────────────╯╰──────────────────────╯
-```
-
-## Supported Platforms
-
-- Linux distributions with Python 3, `psutil`, and `rich`
-- Windows 10 and Windows 11 with Python 3
-
-Linux exposes more hardware sensors and GPU interfaces, so Linux generally provides more complete metrics. Windows still supports the platform-neutral CPU, memory, process, battery, and optional NVIDIA metrics.
+Missing drivers, sensors, permissions, or platform APIs are shown as unavailable where possible; they do not disable the rest of the dashboard.
 
 ## Requirements
 
-- Linux or Windows
-- Python 3.9 or newer recommended
-- Python virtual-environment support (`venv`)
-- Python packages `psutil` and `rich`
-- Optional: NVIDIA, AMD, or Intel GPU drivers/tools for GPU metrics
-- Optional: Linux hardware sensors for temperature metrics
+- Linux or Windows 10/11
+- Python 3.9 or newer
+- Python's `venv` module for the installer
+- A terminal emulator
+- Internet access during installation, so Python packages can be installed
 
-On Fedora:
+The required Python packages are installed automatically:
+
+- `psutil >= 5.9, < 7`
+- `rich >= 13.0, < 15`
+
+Optional hardware integrations do not need to be installed for the CPU, memory, process, and basic system panels:
+
+- NVIDIA GPU metrics require `nvidia-smi` (`nvidia-smi.exe` on Windows) in `PATH`
+- AMD and Intel GPU metrics are Linux-only and use DRM/sysfs files exposed by the kernel
+- Temperature readings depend on what the operating system and hardware drivers expose
+
+## Install On Linux
+
+From a shell, clone the repository and enter it:
 
 ```bash
-sudo dnf install python3 python3-psutil python3-rich
+git clone https://github.com/M0oham6d/pulsedeck.git
+cd pulsedeck
 ```
 
-## Linux Installation
-
-Clone or download this repository, enter the project directory, and run:
+Run the per-user installer:
 
 ```bash
 chmod +x install.sh
 ./install.sh
 ```
 
-The installer:
+The installer does not require `sudo`. It:
 
-- Installs Python dependencies from `requirements.txt`
-- Installs the command as `~/.local/bin/pulsedeck`
-- Installs a portable launcher
-- Creates a KDE/GNOME-compatible autostart entry
+1. Creates a private virtual environment under `${XDG_DATA_HOME:-~/.local/share}/pulsedeck/venv`.
+2. Installs PulseDeck and its dependencies from `pyproject.toml`.
+3. Creates a launcher at `~/.local/bin/pulsedeck`.
+4. Creates a desktop autostart entry only if `konsole` is installed.
 
-The installer does not require root privileges.
+Run the command from a new shell:
 
-Set `PULSEDECK_BIN_DIR` to choose a different per-user executable directory. The default is
-`~/.local/bin`; application data and the virtual environment remain under `XDG_DATA_HOME`.
+```bash
+pulsedeck
+```
 
-## Windows Installation
+If the shell says `pulsedeck: command not found`, add the default executable directory to your current `PATH` and retry:
 
-PulseDeck supports Windows 10 and Windows 11 with Python 3.9 or newer.
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+pulsedeck
+```
 
-Install Python from <https://www.python.org/downloads/windows/> and enable **Add Python to PATH** during installation.
+To install the launcher somewhere else, set `PULSEDECK_BIN_DIR` before running the installer:
 
-Open PowerShell in the project directory and run:
+```bash
+PULSEDECK_BIN_DIR="$HOME/bin" ./install.sh
+```
+
+The virtual environment and application data remain under `${XDG_DATA_HOME:-~/.local/share}/pulsedeck` regardless of the launcher directory. Set `XDG_DATA_HOME` before installation to change that location.
+
+### Linux Distribution Packages
+
+The installer uses Python packages from PyPI. On distributions where Python virtual environments are split into a separate package, install that package first. For example, on Debian/Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install python3 python3-venv
+```
+
+On Fedora:
+
+```bash
+sudo dnf install python3
+```
+
+The installer creates its own environment and installs the required dependency ranges; distribution packages for `psutil` and `rich` are not required.
+
+### Run Directly From The Repository
+
+This does not install a global command:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+python pulsedeck.py
+```
+
+The repository also includes `monitor.sh`, which runs the local `pulsedeck.py` beside the script:
+
+```bash
+./monitor.sh
+```
+
+## Install On Windows
+
+1. Install Python 3.9 or newer from <https://www.python.org/downloads/windows/>. Enable **Add Python to PATH** during setup.
+2. Open PowerShell in the repository directory.
+3. Allow the installer for the current PowerShell process and run it:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\install_windows.ps1
 ```
 
-The Windows installer:
+The installer creates a private virtual environment at `%LOCALAPPDATA%\PulseDeck\venv`, installs PulseDeck and its dependencies from `pyproject.toml`, creates `%LOCALAPPDATA%\PulseDeck\pulsedeck.cmd`, and adds `%LOCALAPPDATA%\PulseDeck` to the current user's `PATH`.
 
-- Creates a private virtual environment under `%LOCALAPPDATA%\PulseDeck\venv`
-- Installs `psutil` and `rich`
-- Installs PulseDeck under `%LOCALAPPDATA%\PulseDeck`
-- Creates `pulsedeck.cmd`
-- Adds the installation directory to the current user's PATH
-
-Open a new PowerShell window after installation and run:
+Open a new PowerShell window so the PATH change is loaded, then run:
 
 ```powershell
 pulsedeck
 ```
 
-One snapshot:
+If the command is not found, run it by its full path:
 
 ```powershell
-pulsedeck --once
+& "$env:LOCALAPPDATA\PulseDeck\pulsedeck.cmd"
 ```
 
-To run directly from the repository instead:
+### Run Directly From The Windows Repository
+
+The repository launcher finds `py` first and falls back to `python`:
 
 ```powershell
-py -3 -m pip install -r requirements.txt
-py -3 .\pulsedeck.py
+Set-ExecutionPolicy -Scope Process Bypass
+.\run_windows.ps1
 ```
 
-Windows uses `psutil` for CPU, frequency, memory, swap/page-file, process, and battery metrics. NVIDIA GPU metrics are available when `nvidia-smi.exe` is installed and available in `PATH`:
+For a development environment instead:
 
 ```powershell
-nvidia-smi
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+python .\pulsedeck.py
 ```
-
-The following Linux-specific features may show `N/A` on Windows:
-
-- `/proc` CPU details
-- `/sys` CPU topology details
-- Linux hardware temperature sensors
-- AMD and Intel Linux DRM/sysfs GPU metrics
-- CPU package and per-core temperatures
-- KDE/Konsole autostart
-
-The dashboard continues running when these values are unavailable. Windows keyboard input uses `msvcrt`, while Linux uses terminal input support through `termios`.
 
 ## Usage
 
-Run the live dashboard:
+```text
+pulsedeck [--once]
+```
+
+Start the live dashboard:
 
 ```bash
 pulsedeck
@@ -146,67 +176,74 @@ Render one snapshot and exit:
 pulsedeck --once
 ```
 
-Show help:
+Show command help:
 
 ```bash
 pulsedeck --help
 ```
 
-Exit the live dashboard with `q`, `Esc`, or `Ctrl-C`.
+In live mode, press `q` or `Esc` to exit. `Ctrl-C` also stops the process. The terminal is restored when the application exits normally or is interrupted.
 
-## CPU Metrics In Brief
+For terminals that cannot display the dashboard's Unicode bars, PulseDeck automatically uses ASCII bars. You can force that behavior with:
 
-- **CPU**: percentage of the complete machine capacity used by a process.
-- **SHARE**: percentage of currently active CPU work attributed to a process.
-- **TOTAL**: average utilization across all logical CPUs.
-- **PACKAGE**: whole-CPU package temperature.
-- **LOAD**: one-minute system load average when the platform provides it; it is different from CPU percentage.
-
-For the complete formulas and examples, see [`docs/METRICS.md`](docs/METRICS.md).
-
-## Documentation
-
-- [`docs/METRICS.md`](docs/METRICS.md): CPU, process, GPU, memory, temperature, and sampling details
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): source structure, data flow, layout behavior, and development notes
-
-## Project Files
-
-```text
-pulsedeck/
-├── README.md
-├── pulsedeck.py
-├── monitor.sh
-├── install.sh
-├── requirements.txt
-├── pyproject.toml
-├── .gitignore
-├── install_windows.ps1
-├── run_windows.ps1
-├── tests/
-│   └── test_pulsedeck.py
-└── docs/
-    ├── METRICS.md
-    └── ARCHITECTURE.md
+```bash
+PULSEDECK_ASCII=1 pulsedeck
 ```
 
-The current release version is `0.3.1`. See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
+## Platform Differences
 
+| Capability | Linux | Windows |
+| --- | --- | --- |
+| CPU, frequency, memory, swap, processes | Yes | Yes |
+| Battery | When exposed by `psutil` | When exposed by `psutil` |
+| NVIDIA GPU and GPU processes | With `nvidia-smi` | With `nvidia-smi.exe` in `PATH` |
+| AMD/Intel GPU DRM/sysfs metrics | When exposed by Linux | No |
+| Linux `/proc` and `/sys` topology details | Yes | No |
+| Hardware temperatures | Depends on drivers/sensors | Often unavailable through `psutil` |
+| One-minute load average | When provided by Python/OS | Displayed as `0.00` because Windows has no `os.getloadavg()` |
+| Konsole autostart | Optional, only when Konsole is installed | No |
 
-## Limitations
+`N/A` is normal for optional hardware data. PulseDeck currently uses the first available GPU backend and does not provide multi-GPU rendering.
 
-- GPU metrics use NVIDIA `nvidia-smi` or Linux DRM/sysfs data for AMD and Intel when available.
-- Some vendor-specific GPU fields may be unavailable.
-- Sensor names vary between machines.
-- Process values are interval-based samples, not permanent accounting.
-- The process table is read-only.
-- No historical graphs are stored.
+## Understanding The CPU Columns
 
-## Privacy
+- `TOTAL` is the average utilization of all logical CPUs.
+- Process `CPU` is normalized to the complete machine capacity. A process using one full thread on an eight-thread machine displays approximately `12.5%`.
+- Process `SHARE` is that process's portion of the currently observed CPU work.
+- Process `RAM` is the process's percentage of system memory.
+- Process `RSS` is the process's resident memory in physical RAM.
 
-PulseDeck does not upload or persist monitoring data. Process command lines can contain private paths, usernames, tokens, or other sensitive arguments, so review screenshots before publishing them.
+See [`docs/METRICS.md`](docs/METRICS.md) for formulas, sampling behavior, and sensor details.
+
+## Documentation And Development
+
+- [`docs/METRICS.md`](docs/METRICS.md): displayed values, formulas, and platform caveats
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): source layout, data flow, installation internals, and testing
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): development setup and contribution checks
+- [`CHANGELOG.md`](CHANGELOG.md): release history
+- [`SECURITY.md`](SECURITY.md): private vulnerability reporting and sensitive output guidance
+
+Run the core checks used by CI:
+
+```bash
+python -m unittest discover -s tests -v
+python -m py_compile pulsedeck.py
+python pulsedeck.py --help
+python pulsedeck.py --once
+ruff check .
+bash -n install.sh monitor.sh
+```
+
+On Windows, use the PowerShell or Python equivalents for the Python checks. `bash -n` is only for the two shell scripts and is not required on Windows.
+
+## Limitations And Privacy
+
+- GPU, temperature, battery, network, and disk values depend on operating-system APIs, drivers, permissions, and hardware.
+- Only the root filesystem is included in the disk panel.
+- Process values are interval samples, not permanent accounting.
+- The process table is read-only and no historical graphs are stored.
+- PulseDeck does not upload or persist monitoring data. Process command lines can contain private paths, usernames, tokens, or other sensitive arguments; review screenshots and logs before sharing them.
 
 ## License
 
-PulseDeck is licensed under the MIT License.
-
-See the [LICENSE](LICENSE) file for the complete license text.
+PulseDeck is licensed under the MIT License. See [`LICENSE`](LICENSE) for the complete text.
