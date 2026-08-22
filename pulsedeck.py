@@ -39,7 +39,7 @@ GPU_REFRESH_SECONDS = 3.0
 
 _gpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pulsedeck-gpu")
 _gpu_future = None
-_gpu_snapshot = (None, [])
+_gpu_snapshot = (None, [], None)
 _gpu_sampled_at = 0.0
 _network_sample = None
 
@@ -243,9 +243,11 @@ def nvidia_gpu_processes():
     return rows
 
 
-def drm_gpu_data():
+def drm_gpus():
+    """Return every AMD/Intel DRM card exposed by sysfs."""
     if os.name == "nt":
-        return None
+        return []
+    gpus = []
     for card in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):
         vendor_id = read_text(os.path.join(card, "vendor")).lower()
         if vendor_id not in ("0x1002", "0x8086"):
@@ -269,16 +271,33 @@ def drm_gpu_data():
                     break
             if temperature is not None:
                 break
-        return {
-            "vendor": vendor,
-            "name": model or f"{vendor} GPU",
-            "temp": temperature,
-            "usage": usage,
-            "memory_used": memory_used / 1024 if memory_used is not None else None,
-            "memory_total": memory_total / 1024 if memory_total is not None else None,
-            "power": None,
-        }
-    return None
+        clock_dir = os.path.dirname(card)
+        gpus.append(
+            {
+                "vendor": vendor,
+                "name": model or f"{vendor} GPU",
+                "temp": temperature,
+                "usage": usage,
+                "memory_used": memory_used / 1024 if memory_used is not None else None,
+                "memory_total": memory_total / 1024 if memory_total is not None else None,
+                "power": None,
+                "frequency": read_number(os.path.join(clock_dir, "gt_cur_freq_mhz")),
+                "frequency_min": read_number(os.path.join(clock_dir, "gt_min_freq_mhz")),
+                "frequency_max": read_number(os.path.join(clock_dir, "gt_max_freq_mhz")),
+            }
+        )
+    return gpus
+
+
+def drm_gpu_data():
+    return next(iter(drm_gpus()), None)
+
+
+def integrated_gpu_data(main_gpu):
+    """Return the CPU-package GPU when a discrete NVIDIA GPU already owns the panel."""
+    if main_gpu is None or main_gpu["vendor"] != "NVIDIA":
+        return None
+    return next(iter(drm_gpus()), None)
 
 
 def gpu_data():
@@ -293,7 +312,7 @@ def gpu_snapshot():
         try:
             _gpu_snapshot = _gpu_future.result()
         except Exception:  # noqa: BLE001 - a failed optional probe must not stop rendering
-            _gpu_snapshot = (None, [])
+            _gpu_snapshot = (None, [], None)
         _gpu_future = None
         _gpu_sampled_at = now
     if _gpu_future is None and now - _gpu_sampled_at >= GPU_REFRESH_SECONDS:
@@ -301,6 +320,7 @@ def gpu_snapshot():
             lambda: (
                 (gpu := gpu_data()),
                 nvidia_gpu_processes() if gpu and gpu["vendor"] == "NVIDIA" else [],
+                integrated_gpu_data(gpu),
             )
         )
     return _gpu_snapshot
@@ -420,6 +440,25 @@ def battery_data():
         return None
 
 
+def interface_kind(name, base="/sys/class/net"):
+    """Classify an interface as wifi or ethernet; virtual devices return None."""
+    if os.name == "nt":
+        lowered = name.lower()
+        if lowered.startswith(("wl", "wi-fi", "wifi", "wireless")):
+            return "wifi"
+        if lowered.startswith(("ethernet", "eth", "en")):
+            return "ethernet"
+        return None
+    root = os.path.join(base, name)
+    if os.path.isdir(os.path.join(root, "wireless")) or os.path.isdir(
+        os.path.join(root, "phy80211")
+    ):
+        return "wifi"
+    if os.path.exists(os.path.join(root, "device")):
+        return "ethernet"
+    return None
+
+
 def network_data():
     """Return active interfaces and byte rates calculated from the previous sample."""
     global _network_sample
@@ -434,6 +473,8 @@ def network_data():
     elapsed = now - _network_sample[0] if _network_sample else 0.0
     interfaces = []
     for name, (sent, received) in sorted(current.items()):
+        if interface_kind(name) is None:
+            continue
         upload = download = None
         if _network_sample and elapsed > 0:
             previous = _network_sample[1].get(name)
@@ -485,11 +526,12 @@ def collect():
     sensors = sensor_data()
     memory = psutil.virtual_memory()
     cpu = cpu_data(sensors)
-    gpu, gpu_processes = gpu_snapshot()
+    gpu, gpu_processes, integrated = gpu_snapshot()
     return {
         "cpu": cpu,
         "gpu": gpu,
         "gpu_processes": gpu_processes,
+        "igpu": integrated,
         "memory": memory,
         "memory_used": memory.total - memory.available,
         "swap": psutil.swap_memory(),
@@ -499,6 +541,39 @@ def collect():
         "disks": disk_data(),
         "processes": process_data(cpu["usage"]),
     }
+
+
+def integrated_usage(igpu):
+    """Real busy percent when available, otherwise an estimate from GPU clocks."""
+    if igpu["usage"] is not None:
+        return igpu["usage"], False
+    low = igpu.get("frequency_min")
+    high = igpu.get("frequency_max")
+    current = igpu.get("frequency")
+    if current is not None and low is not None and high and high > low:
+        return max(0.0, min((current - low) / (high - low) * 100.0, 100.0)), True
+    return None, False
+
+
+def integrated_gpu_line(igpu):
+    line = Text("IGPU  ", style="dim", no_wrap=True, overflow="ellipsis")
+    line.append(igpu["name"], style="bold white")
+    usage, estimated = integrated_usage(igpu)
+    if usage is not None:
+        line.append("  ")
+        line.append_text(bar(usage, 8))
+        prefix = "~" if estimated else ""
+        line.append(f" {prefix}{usage:.1f}%", style=usage_style(usage))
+    else:
+        line.append("N/A", style="dim")
+    frequency = igpu.get("frequency")
+    frequency_max = igpu.get("frequency_max")
+    if frequency is not None and frequency_max:
+        line.append(
+            f"   {frequency / 1000:.2f}/{frequency_max / 1000:.2f} GHz",
+            style="dim",
+        )
+    return line
 
 
 def render_cpu(data, compact=False):
@@ -547,6 +622,10 @@ def render_cpu(data, compact=False):
         row.extend([usage_cell(core["usage"], 10 if compact else 14), temp])
         core_table.add_row(*row)
     content.append(core_table)
+    igpu = data.get("igpu")
+    if igpu:
+        content.append(Text(""))
+        content.append(integrated_gpu_line(igpu))
     return Panel(Group(*content), title=" CPU ", border_style="cyan", padding=(0, 1))
 
 
@@ -720,36 +799,71 @@ def rate_value(value):
     return "N/A" if value is None else f"{bytes_value(value)}/s"
 
 
-def render_system(data):
-    content = [Text("NETWORK", style="bold dim")]
-    network = data["network"]
-    if network:
-        for interface in network[:4]:
-            content.append(
-                Text(
-                    f"{interface['name']:<10.10}  UP {rate_value(interface['upload']):>12}"
-                    f"  DOWN {rate_value(interface['download']):>12}",
-                    overflow="ellipsis",
-                    no_wrap=True,
-                )
-            )
-    else:
-        content.append(Text("No active interfaces", style="dim"))
+def system_panel_size(data, height):
+    """Size the SYSTEM panel to its content without exceeding the layout's share."""
+    dashboard_height = max(height - 2, 0) * 4 // 7
+    share = max(dashboard_height * 2 // 5, 3)
+    interfaces = min(len(data["network"]), 4) or 1
+    disks = min(len(data["disks"]), 4) or 1
+    needed = interfaces + disks + 5
+    return min(max(needed, 3), share)
 
-    content.append(Text(""))
-    content.append(Text("DISKS", style="bold dim"))
-    if data["disks"]:
-        for disk in data["disks"][:4]:
-            content.append(
-                Text(
-                    f"{disk['mountpoint']:<16.16}  {bar(disk['percent'], 8, 'yellow')}"
-                    f" {disk['percent']:5.1f}%  {bytes_value(disk['free'])} free",
-                    overflow="ellipsis",
-                    no_wrap=True,
+
+def render_system(data, height=None):
+    network = data["network"][:4]
+    disks = data["disks"][:4]
+    no_interfaces = not network
+    no_disks = not disks
+    net_rows = len(network) or 1
+    disk_rows = len(disks) or 1
+    net_allocated = None
+    disk_allocated = None
+    separator = True
+    if height is not None:
+        body = max(height - 4, 0)
+        if net_rows + disk_rows + 1 > body:
+            separator = False
+            if net_rows + disk_rows > body:
+                rows = body
+                take_net = min(net_rows, -(-rows // 2))
+                take_disk = min(disk_rows, rows - take_net)
+                take_net += min(rows - take_net - take_disk, net_rows - take_net)
+                network = network[:take_net]
+                disks = disks[:take_disk]
+                net_allocated = take_net
+                disk_allocated = take_disk
+
+    content = [Text("NETWORK", style="bold dim")]
+    if network or (no_interfaces and net_allocated != 0):
+        if network:
+            for interface in network:
+                content.append(
+                    Text(
+                        f"{interface['name']:<10.10}  UP {rate_value(interface['upload']):>12}"
+                        f"  DOWN {rate_value(interface['download']):>12}",
+                        overflow="ellipsis",
+                        no_wrap=True,
+                    )
                 )
-            )
-    else:
-        content.append(Text("No disk data", style="dim"))
+        else:
+            content.append(Text("No active interfaces", style="dim"))
+
+    if separator:
+        content.append(Text(""))
+    content.append(Text("DISKS", style="bold dim"))
+    if disks or (no_disks and disk_allocated != 0):
+        if disks:
+            for disk in disks:
+                content.append(
+                    Text(
+                        f"{disk['mountpoint']:<16.16}  {bar(disk['percent'], 8, 'yellow')}"
+                        f" {disk['percent']:5.1f}%  {bytes_value(disk['free'])} free",
+                        overflow="ellipsis",
+                        no_wrap=True,
+                    )
+                )
+        else:
+            content.append(Text("No disk data", style="dim"))
     return Panel(Group(*content), title=" SYSTEM ", border_style="yellow", padding=(0, 1))
 
 
@@ -794,7 +908,7 @@ def build_layout(data, width, height):
         )
         layout["cpu"].split_column(
             Layout(name="cpu_main", ratio=3),
-            Layout(name="system", ratio=2),
+            Layout(name="system", size=system_panel_size(data, height)),
         )
         layout["side"].split_column(
             Layout(name="gpu", ratio=8),
@@ -802,7 +916,7 @@ def build_layout(data, width, height):
             Layout(name="sensors", ratio=3),
         )
         layout["cpu_main"].update(render_cpu(data, compact=True))
-        layout["system"].update(render_system(data))
+        layout["system"].update(render_system(data, height=system_panel_size(data, height)))
         layout["gpu"].update(render_gpu(data, compact=True))
         layout["memory"].update(render_memory(data, compact=True))
         layout["sensors"].update(render_sensors(data))
@@ -810,7 +924,7 @@ def build_layout(data, width, height):
         layout["footer"].update(Align.center(Text("q / Esc  quit", style="dim")))
     else:
         layout["main"].split_column(
-            Layout(name="cpu", size=8),
+            Layout(name="cpu", size=10 if data.get("igpu") else 8),
             Layout(name="gpu", size=11),
             Layout(name="memory", size=4),
             Layout(name="processes"),

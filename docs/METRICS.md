@@ -137,6 +137,21 @@ If `nvidia-smi` or `nvidia-smi.exe` is unavailable, PulseDeck checks Linux DRM/s
 
 For NVIDIA devices, the `APPS` section inside the GPU panel reads `nvidia-smi pmon -c 1`. This includes graphics clients such as desktop compositors as well as compute clients. The list is empty when the driver does not expose process monitoring.
 
+### Integrated GPU Metrics
+
+On hybrid systems where an NVIDIA GPU owns the GPU panel, PulseDeck also reads the first AMD or Intel DRM card as the integrated GPU and displays it inside the CPU panel:
+
+- An `IGPU` row with the card name
+- A utilization bar using `gpu_busy_percent` when the driver exposes it (AMD APUs)
+- On Intel drivers without `gpu_busy_percent`, utilization is estimated from clock counters as `(gt_cur_freq_mhz - gt_min_freq_mhz) / (gt_max_freq_mhz - gt_min_freq_mhz)`. Estimated values are prefixed with `~` because clock range is an approximation, not a measured busy ratio.
+- Current and maximum GPU clocks
+
+The row is hidden entirely when no readable integrated GPU exists, for example on desktop CPUs without one. When no discrete NVIDIA GPU is present, the AMD or Intel card is already displayed in the GPU panel and is not repeated in the CPU panel. Integrated GPU data is sampled in the same background pass as the main GPU.
+
+## Network Metrics
+
+Upload and download rates are calculated from `psutil.net_io_counters()` deltas between refreshes for active interfaces. Only physical adapters are listed: on Linux an interface counts as Wi-Fi when `/sys/class/net/<name>/wireless` (or `phy80211`) exists and as Ethernet when `/sys/class/net/<name>/device` is present. Virtual devices such as bridges, tunnels, VPN links, and hypervisor networks are excluded. Windows classifies interfaces by name prefix.
+
 ## Memory Metrics
 
 The used RAM amount shown by PulseDeck is calculated as:

@@ -33,6 +33,7 @@ pulsedeck/
 | NVIDIA GPU metrics | `nvidia-smi` / `nvidia-smi.exe` |
 | NVIDIA GPU processes | `nvidia-smi pmon -c 1` |
 | AMD/Intel GPU metrics | Linux DRM/sysfs |
+| Integrated GPU beside a discrete NVIDIA GPU | Linux DRM/sysfs clock counters |
 | Process metrics | `psutil.process_iter()` |
 | Network rates | `psutil.net_io_counters()` and `psutil.net_if_stats()` |
 | Disk space | `psutil.disk_partitions()` and `psutil.disk_usage()` |
@@ -45,7 +46,7 @@ Each refresh performs these steps:
 2. Read RAM and swap statistics.
 3. Read per-logical-CPU usage and frequency.
 4. Map logical CPUs to physical cores.
-5. Schedule the available GPU backend in a background sampler and use the latest completed sample.
+5. Schedule the available GPU backend in a background sampler and use the latest completed sample, including the integrated GPU probe on hybrid NVIDIA systems.
 6. Read process metrics.
 7. Normalize process CPU values and calculate CPU share.
 8. Build a Rich layout based on terminal dimensions.
@@ -63,11 +64,12 @@ while a new sample is pending.
 - `nvidia_gpu_data()` queries NVIDIA with `nvidia-smi`.
 - `nvidia_gpu_processes()` reads NVIDIA compute and graphics clients with `nvidia-smi pmon`.
 - `gpu_snapshot()` runs both NVIDIA queries in a single bounded background worker and caches the last result.
-- `drm_gpu_data()` detects AMD and Intel devices through Linux DRM/sysfs interfaces.
+- `drm_gpus()` detects every AMD and Intel device through Linux DRM/sysfs interfaces, including GPU clock counters.
+- `integrated_gpu_data()` picks the first AMD/Intel card when a discrete NVIDIA GPU already owns the panel.
 - `gpu_data()` selects the first available backend and converts unsupported values to `None`.
 - `cpu_data()` samples CPU usage, reads frequency/load, and creates physical-core rows.
 - `process_data()` reads process information, filters dead/zombie processes, normalizes CPU values, and sorts resource users.
-- `network_data()` samples active interface counters and calculates upload/download rates between refreshes.
+- `network_data()` samples active interface counters, classifies them with `interface_kind()`, and calculates upload/download rates between refreshes for Wi-Fi and Ethernet adapters only.
 - `disk_data()` reads only the OS-root filesystem capacity and skips inaccessible or duplicate root mount points.
 - `collect()` combines all values into one snapshot passed to the renderers.
 
@@ -79,7 +81,7 @@ The process `SHARE` value is calculated from normalized process CPU divided by t
 
 ### Rendering
 
-- `render_cpu()` displays the CPU model, totals, physical cores, mapped thread IDs, usage, frequency, temperature, and load.
+- `render_cpu()` displays the CPU model, totals, physical cores, mapped thread IDs, usage, frequency, temperature, load, and integrated GPU usage on hybrid systems.
 - `render_gpu()` displays vendor metrics, separate compact temperature/VRAM bars, GPU utilization, and handles unavailable values.
 - `render_gpu()` displays active NVIDIA GPU applications in its `APPS` section when process monitoring is available.
 - `render_memory()` displays RAM and swap, using separate short rows in compact mode.
@@ -101,7 +103,7 @@ Wide mode activates at least 100 columns wide and 28 rows high:
 └────────────────────────────────────┘
 ```
 
-Wide mode gives the GPU flexible height, keeps memory at a fixed compact height, reserves the remaining right-column space for sensors, and uses the spare CPU-panel area for network and disk information. Compact mode hides the system panel, removes the detailed thread column, reduces bar widths, keeps RAM and SWAP on separate rows, and moves sensor details into the footer. This keeps the CPU, GPU, memory, and process panels usable in smaller terminals.
+Wide mode gives the GPU flexible height, keeps memory at a fixed compact height, reserves the remaining right-column space for sensors, and uses the spare CPU-panel area for network and disk information. The SYSTEM panel is sized to its content up to the layout's ratio share; on short terminals it trims the blank separator first and then balances interface and disk rows so nothing is cropped. Compact mode hides the system panel, removes the detailed thread column, reduces bar widths, keeps RAM and SWAP on separate rows, and moves sensor details into the footer. This keeps the CPU, GPU, memory, and process panels usable in smaller terminals.
 
 ## Startup Installation
 
@@ -154,7 +156,7 @@ Recommended future automated tests:
 ## Portability Notes
 
 - GPU collection supports NVIDIA and Linux DRM/sysfs fallbacks for AMD and Intel.
-- Multi-GPU rendering is not implemented; the first available GPU backend is used.
+- Multi-GPU rendering is not implemented; the first available GPU backend is used, with the integrated GPU shown in the CPU panel when a discrete NVIDIA GPU owns the panel.
 - Sensor group names differ between hardware vendors and kernel drivers.
 - Linux uses `/proc`, `/sys`, and Linux sensor APIs; Windows falls back to platform-neutral `psutil` metrics.
 - Windows installation uses `install_windows.ps1` and a private virtual environment.

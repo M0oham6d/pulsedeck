@@ -7,10 +7,11 @@ PulseDeck is a cross-platform terminal dashboard for CPU, GPU, memory, temperatu
 - Live readings refreshed approximately every second
 - Compact and wide layouts selected from the terminal size
 - CPU utilization, current/max frequency, one-minute load, package temperature, physical-core rows, and logical-thread mapping where the operating system exposes it
+- Integrated GPU consumption in the CPU panel on hybrid systems with a discrete NVIDIA GPU
 - NVIDIA utilization, temperature, VRAM, power draw, and active GPU applications when `nvidia-smi` is available
 - AMD and Intel GPU data through Linux DRM/sysfs when available
 - RAM and swap usage
-- Up to four active network interfaces with upload/download rates
+- Wi-Fi and Ethernet interfaces with upload/download rates; virtual adapters are filtered out
 - The operating system root filesystem's usage and free space
 - Available NVMe, chipset, Wi-Fi, CPU, and battery sensor readings
 - Top 16 processes sorted by normalized CPU usage, with PID, command, CPU, CPU share, RAM percentage, and RSS
