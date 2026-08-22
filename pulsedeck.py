@@ -308,9 +308,9 @@ def igpu_engine_usage(pci_id=None, proc_root="/proc"):
                 continue
         except OSError:
             continue
-        head, _, fd_number = fd_path.rpartition(os.sep)
+        pid_dir, _, fd_number = fd_path.rpartition(os.sep + "fd" + os.sep)
         try:
-            text = Path(head, "fdinfo", fd_number).read_text()
+            text = Path(pid_dir or proc_root, "fdinfo", fd_number).read_text()
         except OSError:
             continue
         if pci_id is not None and f"drm-pdev:\t{pci_id}" not in text:

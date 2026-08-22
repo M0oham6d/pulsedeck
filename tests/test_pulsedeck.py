@@ -330,14 +330,18 @@ class EngineUsageTests(unittest.TestCase):
 
     def test_engine_usage_delta_between_samples(self):
         MODULE._igpu_engine_sample = None
-        with tempfile.TemporaryDirectory() as tmp:
+        clocks = [1_000_000_000, 1_500_000_000]
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(MODULE.time, "monotonic_ns", side_effect=clocks),
+        ):
             self.make_client(tmp, 100, 3, "0000:00:02.0", [("render", 1_000_000)])
             first = MODULE.igpu_engine_usage("0000:00:02.0", proc_root=tmp)
             self.assertIsNone(first)
             self.make_client(tmp, 100, 3, "0000:00:02.0", [("render", 1_500_000)])
             second = MODULE.igpu_engine_usage("0000:00:02.0", proc_root=tmp)
         MODULE._igpu_engine_sample = None
-        self.assertEqual(second, 0.0)
+        self.assertAlmostEqual(second, 0.1)
 
     def test_engine_usage_ignores_other_pci_devices(self):
         MODULE._igpu_engine_sample = None
