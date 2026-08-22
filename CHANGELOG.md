@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - Measure integrated GPU utilization from `/proc/*/fdinfo` engine-time deltas on drivers without a busy-percent file, falling back to the clock-based estimate only until the first delta exists.
 - Block on the GPU sampler in `--once` mode so single-shot renders include GPU and integrated GPU data.
