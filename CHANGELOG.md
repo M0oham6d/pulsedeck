@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Measure integrated GPU utilization from `/proc/*/fdinfo` engine-time deltas on drivers without a busy-percent file, falling back to the clock-based estimate only until the first delta exists.
+- Block on the GPU sampler in `--once` mode so single-shot renders include GPU and integrated GPU data.
+- Add live battery discharge wattage to the SENSORS panel and compact footer.
+- Add a `GPU` activity column to the TOP RESOURCE USERS table on systems with `nvidia-smi`.
+- Keep every compact-mode panel visible on short terminals by shrinking the GPU panel and its `APPS` list first.
+- Apply `ruff` formatting across the source and gate formatting in CI.
+
 ## 0.4.0
 
 - Show integrated GPU consumption in the CPU panel on hybrid NVIDIA systems, estimated from Intel clock counters when the driver has no busy-percent file.

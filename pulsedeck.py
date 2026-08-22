@@ -284,6 +284,7 @@ def drm_gpus():
                 "frequency": read_number(os.path.join(clock_dir, "gt_cur_freq_mhz")),
                 "frequency_min": read_number(os.path.join(clock_dir, "gt_min_freq_mhz")),
                 "frequency_max": read_number(os.path.join(clock_dir, "gt_max_freq_mhz")),
+                "pci": os.path.basename(os.path.realpath(card)),
             }
         )
     return gpus
@@ -293,15 +294,65 @@ def drm_gpu_data():
     return next(iter(drm_gpus()), None)
 
 
+_igpu_engine_sample = None
+
+
+def igpu_engine_usage(pci_id=None, proc_root="/proc"):
+    """GPU utilization in percent from cumulative DRM engine times in /proc fdinfo."""
+    global _igpu_engine_sample
+    now_ns = time.monotonic_ns()
+    busy_ns = 0
+    for fd_path in glob.iglob(os.path.join(proc_root, "[0-9]*", "fd", "*")):
+        try:
+            if "/dev/dri/" not in os.readlink(fd_path):
+                continue
+        except OSError:
+            continue
+        head, _, fd_number = fd_path.rpartition(os.sep)
+        try:
+            text = Path(head, "fdinfo", fd_number).read_text()
+        except OSError:
+            continue
+        if pci_id is not None and f"drm-pdev:\t{pci_id}" not in text:
+            continue
+        for line in text.splitlines():
+            if line.startswith("drm-engine-"):
+                value = line.partition(":")[2].split()
+                if value:
+                    try:
+                        busy_ns += int(value[0])
+                    except ValueError:
+                        pass
+    usage = None
+    previous = _igpu_engine_sample
+    if previous is not None and now_ns > previous[0]:
+        usage = max(0.0, min((busy_ns - previous[1]) / (now_ns - previous[0]) * 100.0, 100.0))
+    _igpu_engine_sample = (now_ns, busy_ns)
+    return usage
+
+
 def integrated_gpu_data(main_gpu):
     """Return the CPU-package GPU when a discrete NVIDIA GPU already owns the panel."""
     if main_gpu is None or main_gpu["vendor"] != "NVIDIA":
         return None
-    return next(iter(drm_gpus()), None)
+    igpu = next(iter(drm_gpus()), None)
+    if igpu and igpu["usage"] is None and os.name != "nt":
+        igpu["engine_usage"] = igpu_engine_usage(igpu.get("pci") or None)
+    return igpu
 
 
 def gpu_data():
     return nvidia_gpu_data() or drm_gpu_data()
+
+
+def submit_gpu_sample():
+    return _gpu_executor.submit(
+        lambda: (
+            (gpu := gpu_data()),
+            nvidia_gpu_processes() if gpu and gpu["vendor"] == "NVIDIA" else [],
+            integrated_gpu_data(gpu),
+        )
+    )
 
 
 def gpu_snapshot():
@@ -316,14 +367,33 @@ def gpu_snapshot():
         _gpu_future = None
         _gpu_sampled_at = now
     if _gpu_future is None and now - _gpu_sampled_at >= GPU_REFRESH_SECONDS:
-        _gpu_future = _gpu_executor.submit(
-            lambda: (
-                (gpu := gpu_data()),
-                nvidia_gpu_processes() if gpu and gpu["vendor"] == "NVIDIA" else [],
-                integrated_gpu_data(gpu),
-            )
-        )
+        _gpu_future = submit_gpu_sample()
     return _gpu_snapshot
+
+
+def wait_for_gpu_sample(force=False):
+    """Block until a GPU sample completes so one-shot renders include it."""
+    global _gpu_future, _gpu_snapshot, _gpu_sampled_at
+    now = time.monotonic()
+    if _gpu_future is None and (force or now - _gpu_sampled_at >= GPU_REFRESH_SECONDS):
+        _gpu_future = submit_gpu_sample()
+    if _gpu_future is None:
+        return
+    try:
+        _gpu_snapshot = _gpu_future.result(timeout=4)
+    except Exception:  # noqa: BLE001 - a failed optional probe must not stop rendering
+        _gpu_snapshot = (None, [], None)
+    _gpu_future = None
+    _gpu_sampled_at = time.monotonic()
+
+
+def ensure_once_gpu_samples():
+    """Prime the sampler and take a second pass when integrated usage still lacks a delta."""
+    wait_for_gpu_sample()
+    _, _, igpu = _gpu_snapshot
+    if igpu and igpu.get("usage") is None and igpu.get("engine_usage") is None:
+        time.sleep(0.8)
+        wait_for_gpu_sample(force=True)
 
 
 def normalize_process_cpu(raw_cpu, logical_cpu_count, total_cpu_usage):
@@ -373,7 +443,15 @@ def cpu_data(sensors):
     }
 
 
-def process_data(total_cpu_usage, limit=16):
+def gpu_activity(entry):
+    """Highest engine share for a pmon client; listed-but-idle clients count as zero."""
+    values = [entry.get(key) for key in ("sm", "encoder", "decoder")]
+    present = [value for value in values if value is not None]
+    return max(present) if present else 0.0
+
+
+def process_data(total_cpu_usage, limit=16, gpu_processes=None):
+    gpu_by_pid = {entry["pid"]: gpu_activity(entry) for entry in gpu_processes or []}
     rows = []
     logical_cpu_count = psutil.cpu_count(logical=True) or 1
     attributes = [
@@ -401,6 +479,7 @@ def process_data(total_cpu_usage, limit=16):
                     "command": command,
                     "cpu": cpu_capacity,
                     "cpu_share": cpu_share,
+                    "gpu": gpu_by_pid.get(info["pid"]),
                     "memory_percent": info["memory_percent"] or 0.0,
                     "rss": info["memory_info"].rss if info["memory_info"] else 0,
                 }
@@ -440,6 +519,23 @@ def battery_data():
         return psutil.sensors_battery()
     except (AttributeError, NotImplementedError, OSError):
         return None
+
+
+def battery_watts():
+    """Current battery power draw in watts from power_supply sysfs."""
+    for base in sorted(glob.glob("/sys/class/power_supply/BAT*")):
+        micro_watts = read_number(os.path.join(base, "power_now"))
+        if micro_watts is not None:
+            watts = micro_watts / 1e6
+        else:
+            voltage = read_number(os.path.join(base, "voltage_now"))
+            current = read_number(os.path.join(base, "current_now"))
+            if voltage is None or current is None:
+                continue
+            watts = voltage * current / 1e12
+        if 0 < watts <= 500:
+            return watts
+    return None
 
 
 def interface_kind(name, base="/sys/class/net"):
@@ -539,9 +635,10 @@ def collect():
         "swap": psutil.swap_memory(),
         "sensors": extra_sensor_rows(sensors),
         "battery": battery_data(),
+        "battery_power": battery_watts(),
         "network": network_data(),
         "disks": disk_data(),
-        "processes": process_data(cpu["usage"]),
+        "processes": process_data(cpu["usage"], gpu_processes=gpu_processes),
     }
 
 
@@ -549,6 +646,9 @@ def integrated_usage(igpu):
     """Real busy percent when available, otherwise an estimate from GPU clocks."""
     if igpu["usage"] is not None:
         return igpu["usage"], False
+    engine = igpu.get("engine_usage")
+    if engine is not None:
+        return engine, False
     low = igpu.get("frequency_min")
     high = igpu.get("frequency_max")
     current = igpu.get("frequency")
@@ -631,7 +731,7 @@ def render_cpu(data, compact=False):
     return Panel(Group(*content), title=" CPU ", border_style="cyan", padding=(0, 1))
 
 
-def render_gpu(data, compact=False):
+def render_gpu(data, compact=False, height=None):
     gpu = data["gpu"]
     if gpu is None:
         return Panel(
@@ -676,11 +776,16 @@ def render_gpu(data, compact=False):
         else:
             vram_line.append("N/A", style="dim")
         processes = data.get("gpu_processes", [])
-        content = [first, temp_line, vram_line, Text("")]
+        content = [first, temp_line, vram_line]
+        app_rows = None if height is None else height - 9
+        if app_rows is not None and app_rows <= 0:
+            return Panel(Group(*content), title=" GPU ", border_style="magenta", padding=(0, 1))
+        content.append(Text(""))
         content.append(Text("APPS", style="bold dim"))
         content.append(Text("     PID  APPLICATION       GPU   MEM", style="dim"))
+        limit = len(processes) if app_rows is None else max(app_rows - (0 if processes else 1), 0)
         if processes:
-            for process in processes:
+            for process in processes[:limit]:
                 sm = f"{process['sm']:.0f}%" if process["sm"] is not None else "N/A"
                 memory = f"{process['memory']:.0f}%" if process["memory"] is not None else "N/A"
                 content.append(
@@ -752,7 +857,11 @@ def render_sensors(data):
     battery = data["battery"]
     if battery:
         state = "AC" if battery.power_plugged else "battery"
-        table.add_row("Battery", f"{battery.percent:.0f}% {state}")
+        label = f"{battery.percent:.0f}% {state}"
+        power = data.get("battery_power")
+        if power and not battery.power_plugged:
+            label += f" · {power:.1f} W"
+        table.add_row("Battery", label)
     if not data["sensors"] and not battery:
         table.add_row("No sensor data", "")
     return Panel(table, title=" SENSORS ", border_style="yellow", padding=(0, 1))
@@ -770,6 +879,7 @@ def render_processes(data, compact=False):
     table.add_column("COMMAND", ratio=1, overflow="ellipsis", no_wrap=True)
     table.add_column("CPU", width=7, justify="right", no_wrap=True)
     table.add_column("SHARE", width=7, justify="right", no_wrap=True)
+    table.add_column("GPU", width=6, justify="right", no_wrap=True)
     if not compact:
         table.add_column("RAM", width=7, justify="right", no_wrap=True)
     table.add_column("RSS", width=10, justify="right", no_wrap=True)
@@ -780,6 +890,8 @@ def render_processes(data, compact=False):
             Text(f"{process['cpu']:.1f}%", style=usage_style(process["cpu"])),
             Text(f"{process['cpu_share']:.1f}%", style="cyan"),
         ]
+        gpu = process.get("gpu")
+        row.append(Text(f"{gpu:.0f}%", style="magenta") if gpu is not None else "")
         if not compact:
             row.append(f"{process['memory_percent']:.1f}%")
         row.append(bytes_value(process["rss"]))
@@ -876,9 +988,23 @@ def sensor_footer(data):
     if battery:
         if text:
             text.append("  ·  ", style="dim")
-        text.append(f"Battery {battery.percent:.0f}%", style="dim")
+        battery_label = f"Battery {battery.percent:.0f}%"
+        power = data.get("battery_power")
+        if power and not battery.power_plugged:
+            battery_label += f" {power:.1f}W"
+        text.append(battery_label, style="dim")
     text.append("     q / Esc quit", style="dim")
     return text
+
+
+def compact_panel_sizes(data, height):
+    """Fixed row budgets for the narrow layout that keep every panel visible."""
+    cpu_size = 10 if data.get("igpu") else 8
+    memory_size = 4
+    available = max(height - 2, cpu_size + memory_size + 7)
+    free = max(available - cpu_size - memory_size, 5)
+    gpu_size = min(11, free - 4)
+    return cpu_size, gpu_size, memory_size
 
 
 def build_layout(data, width, height):
@@ -921,14 +1047,15 @@ def build_layout(data, width, height):
         layout["processes"].update(render_processes(data))
         layout["footer"].update(Align.center(Text("q / Esc  quit", style="dim")))
     else:
+        cpu_size, gpu_size, memory_size = compact_panel_sizes(data, height)
         layout["main"].split_column(
-            Layout(name="cpu", size=10 if data.get("igpu") else 8),
-            Layout(name="gpu", size=11),
-            Layout(name="memory", size=4),
+            Layout(name="cpu", size=cpu_size),
+            Layout(name="gpu", size=gpu_size),
+            Layout(name="memory", size=memory_size),
             Layout(name="processes"),
         )
         layout["cpu"].update(render_cpu(data, compact=True))
-        layout["gpu"].update(render_gpu(data, compact=True))
+        layout["gpu"].update(render_gpu(data, compact=True, height=gpu_size))
         layout["memory"].update(render_memory(data, compact=True))
         layout["processes"].update(render_processes(data, compact=True))
         layout["footer"].update(Align.center(sensor_footer(data)))
@@ -979,6 +1106,8 @@ def main():
     time.sleep(0.15)
     data = collect()
     if args.once:
+        ensure_once_gpu_samples()
+        data = collect()
         console.print(build_layout(data, console.size.width, max(console.size.height, 30)))
         return
 

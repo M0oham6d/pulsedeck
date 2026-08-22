@@ -63,12 +63,14 @@ while a new sample is pending.
 - `sensor_data()` reads and preserves temperature labels and limits.
 - `nvidia_gpu_data()` queries NVIDIA with `nvidia-smi`.
 - `nvidia_gpu_processes()` reads NVIDIA compute and graphics clients with `nvidia-smi pmon`.
-- `gpu_snapshot()` runs both NVIDIA queries in a single bounded background worker and caches the last result.
+- `gpu_snapshot()` runs both NVIDIA queries in a single bounded background worker and caches the last result; `wait_for_gpu_sample()` blocks on demand for one-shot renders.
 - `drm_gpus()` detects every AMD and Intel device through Linux DRM/sysfs interfaces, including GPU clock counters.
-- `integrated_gpu_data()` picks the first AMD/Intel card when a discrete NVIDIA GPU already owns the panel.
+- `igpu_engine_usage()` measures integrated GPU utilization from `/proc/*/fdinfo` DRM engine-time deltas, filtered by PCI address.
+- `integrated_gpu_data()` picks the first AMD/Intel card when a discrete NVIDIA GPU already owns the panel and attaches the engine measurement when the driver has no busy-percent file.
 - `gpu_data()` selects the first available backend and converts unsupported values to `None`.
+- `battery_watts()` converts power_supply sysfs values into live discharge wattage.
 - `cpu_data()` samples CPU usage, reads frequency/load, and creates physical-core rows.
-- `process_data()` reads process information, filters dead/zombie processes, normalizes CPU values, and sorts resource users.
+- `process_data()` reads process information, filters dead/zombie processes, normalizes CPU values, merges `nvidia-smi pmon` engine activity per PID, and sorts resource users.
 - `network_data()` samples active interface counters, classifies them with `interface_kind()`, and calculates upload/download rates between refreshes for Wi-Fi and Ethernet adapters only.
 - `disk_data()` reads only the OS-root filesystem capacity and skips inaccessible or duplicate root mount points.
 - `collect()` combines all values into one snapshot passed to the renderers.
@@ -82,11 +84,11 @@ The process `SHARE` value is calculated from normalized process CPU divided by t
 ### Rendering
 
 - `render_cpu()` displays the CPU model, totals, physical cores, mapped thread IDs, usage, frequency, temperature, load, and integrated GPU usage on hybrid systems.
-- `render_gpu()` displays vendor metrics, separate compact temperature/VRAM bars, GPU utilization, and handles unavailable values.
+- `render_gpu()` displays vendor metrics, separate compact temperature/VRAM bars, GPU utilization, and handles unavailable values; on narrow layouts it trims the `APPS` list to the panel height.
 - `render_gpu()` displays active NVIDIA GPU applications in its `APPS` section when process monitoring is available.
 - `render_memory()` displays RAM and swap, using separate short rows in compact mode.
 - `render_sensors()` displays readable sensor names and battery state.
-- `render_processes()` displays PID, command, CPU, share, RAM percentage, and RSS.
+- `render_processes()` displays PID, command, CPU, share, GPU activity, RAM percentage, and RSS.
 - `build_layout()` selects wide or compact mode based on terminal width and height.
 
 ## Layout Modes
@@ -103,7 +105,7 @@ Wide mode activates at least 100 columns wide and 28 rows high:
 └────────────────────────────────────┘
 ```
 
-Wide mode gives the GPU flexible height, keeps memory at a fixed compact height, reserves the remaining right-column space for sensors, and uses the spare CPU-panel area for network and disk information. The SYSTEM panel is sized to its content up to the layout's ratio share; on short terminals it trims the blank separator first and then balances interface and disk rows so nothing is cropped. Compact mode hides the system panel, removes the detailed thread column, reduces bar widths, keeps RAM and SWAP on separate rows, and moves sensor details into the footer. This keeps the CPU, GPU, memory, and process panels usable in smaller terminals.
+Wide mode gives the GPU flexible height, keeps memory at a fixed compact height, reserves the remaining right-column space for sensors, and uses the spare CPU-panel area for network and disk information. The SYSTEM panel is sized to its content up to the layout's ratio share; on short terminals it trims the blank separator first and then balances interface and disk rows so nothing is cropped. Compact mode computes fixed row budgets with `compact_panel_sizes()` so CPU, GPU, memory, and processes all stay visible on short terminals, shrinking the GPU panel and its `APPS` list first; it hides the system panel, removes the detailed thread column, reduces bar widths, keeps RAM and SWAP on separate rows, and moves sensor details into the footer.
 
 ## Startup Installation
 

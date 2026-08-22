@@ -105,6 +105,10 @@ This means that the process accounts for approximately 42.9% of the CPU work obs
 
 The visible process rows do not necessarily add up to 100% `SHARE`, because only the top processes are shown and some processes may be inaccessible.
 
+### GPU
+
+On systems with a working `nvidia-smi`, the process table adds a `GPU` column with the highest engine activity percentage (`sm`, `encoder`, or `decoder`) from that PID's `pmon` sample. Clients listed by `pmon` without engine activity show `0%`. Processes absent from the `pmon` sample leave the cell empty. The column is unavailable when NVIDIA tooling is not installed.
+
 ### RAM And RSS
 
 `RAM` is a process's percentage of system memory.
@@ -143,7 +147,8 @@ On hybrid systems where an NVIDIA GPU owns the GPU panel, PulseDeck also reads t
 
 - An `IGPU` row with the card name
 - A utilization bar using `gpu_busy_percent` when the driver exposes it (AMD APUs)
-- On Intel drivers without `gpu_busy_percent`, utilization is estimated from clock counters as `(gt_cur_freq_mhz - gt_min_freq_mhz) / (gt_max_freq_mhz - gt_min_freq_mhz)`. Estimated values are prefixed with `~` because clock range is an approximation, not a measured busy ratio.
+- On Intel drivers without `gpu_busy_percent`, utilization is measured by scanning `/proc/*/fdinfo` for DRM clients of that card and computing the delta of cumulative `drm-engine-*` nanosecond counters between background samples. Only same-user clients are visible, so other users' workloads can be undercounted.
+- When no engine delta exists yet (for example on the very first sample), utilization falls back to an estimate from clock counters as `(gt_cur_freq_mhz - gt_min_freq_mhz) / (gt_max_freq_mhz - gt_min_freq_mhz)`. Estimated values are prefixed with `~`.
 - Current and maximum GPU clocks
 
 The row is hidden entirely when no readable integrated GPU exists, for example on desktop CPUs without one. When no discrete NVIDIA GPU is present, the AMD or Intel card is already displayed in the GPU panel and is not repeated in the CPU panel. Integrated GPU data is sampled in the same background pass as the main GPU.
@@ -178,6 +183,10 @@ PulseDeck reads `psutil.sensors_temperatures()` when the platform supports it an
 
 Windows commonly has fewer temperature sensors available through `psutil`, so missing CPU and device temperatures are normal. If a sensor supplies a critical limit, PulseDeck uses it. Otherwise, general sensors use a 90°C fallback.
 
+### Battery Power
+
+On Linux, PulseDeck reads `/sys/class/power_supply/BAT*/power_now` (falling back to `voltage_now * current_now`) and shows the live discharge wattage next to the battery percentage in the SENSORS panel and the compact footer. The value is hidden while charging or full, because those states report near-zero current that would read as a misleading draw.
+
 Temperature colors use these thresholds:
 
 - Green: below 80% of the critical limit
@@ -194,4 +203,4 @@ The live UI refresh interval is approximately one second and is configured by:
 REFRESH_SECONDS = 1.0
 ```
 
-Measurements are samples. They can change between refreshes as processes start, stop, sleep, migrate between CPUs, or change frequency. GPU probes are cached and sampled approximately every three seconds, so the first render can show no GPU data until the first background probe completes.
+Measurements are samples. They can change between refreshes as processes start, stop, sleep, migrate between CPUs, or change frequency. GPU probes are cached and sampled approximately every three seconds, so the first render can show no GPU data until the first background probe completes. In `--once` mode PulseDeck blocks on the probe instead, so single-shot renders include GPU and integrated GPU data; when the integrated usage still lacks an engine delta it waits briefly and samples once more.
