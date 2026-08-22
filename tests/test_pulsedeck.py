@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
 import io
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,6 +41,7 @@ class IntegratedGpuTests(unittest.TestCase):
         self.assertIsNone(MODULE.integrated_gpu_data(None))
         self.assertIsNone(MODULE.integrated_gpu_data({"vendor": "Intel", "name": "i"}))
 
+    @patch.object(MODULE.os, "name", "posix")
     @patch.object(MODULE, "igpu_engine_usage", return_value=None)
     @patch.object(MODULE, "drm_gpus")
     def test_integrated_gpu_found_beside_discrete(self, drm, engine):
@@ -48,6 +50,7 @@ class IntegratedGpuTests(unittest.TestCase):
         self.assertEqual(MODULE.integrated_gpu_data({"vendor": "NVIDIA"}), card)
         self.assertIsNone(card["engine_usage"])
 
+    @patch.object(MODULE.os, "name", "posix")
     @patch.object(MODULE, "igpu_engine_usage", return_value=37.5)
     @patch.object(MODULE, "drm_gpus")
     def test_integrated_gpu_attaches_engine_usage(self, drm, engine):
@@ -55,6 +58,16 @@ class IntegratedGpuTests(unittest.TestCase):
         drm.return_value = [card]
         MODULE.integrated_gpu_data({"vendor": "NVIDIA"})
         self.assertEqual(card["engine_usage"], 37.5)
+
+    @patch.object(MODULE.os, "name", "nt")
+    @patch.object(MODULE, "igpu_engine_usage")
+    @patch.object(MODULE, "drm_gpus")
+    def test_integrated_gpu_skips_engine_probe_on_windows(self, drm, engine):
+        card = {"vendor": "Intel", "name": "Intel GPU", "usage": None, "pci": "0000:00:02.0"}
+        drm.return_value = [card]
+        MODULE.integrated_gpu_data({"vendor": "NVIDIA"})
+        self.assertIsNone(card["engine_usage"])
+        engine.assert_not_called()
 
     def test_integrated_usage_prefers_busy_percent(self):
         igpu = {
@@ -359,18 +372,14 @@ class BatteryPowerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bat = Path(tmp) / "BAT1"
             bat.mkdir()
-            (bat / "power_now").write_text("")  # missing -> read_number returns None
+            values = {
+                os.path.join(str(bat), "power_now"): None,
+                os.path.join(str(bat), "voltage_now"): 11_400_000,
+                os.path.join(str(bat), "current_now"): 1_200_000,
+            }
             with (
                 patch.object(MODULE.glob, "glob", return_value=[str(bat)]),
-                patch.object(
-                    MODULE,
-                    "read_number",
-                    side_effect=lambda path: {
-                        f"{bat}/power_now": None,
-                        f"{bat}/voltage_now": 11_400_000,
-                        f"{bat}/current_now": 1_200_000,
-                    }.get(str(path)),
-                ),
+                patch.object(MODULE, "read_number", side_effect=lambda path: values.get(path)),
             ):
                 watts = MODULE.battery_watts()
         self.assertAlmostEqual(watts, 13.68)

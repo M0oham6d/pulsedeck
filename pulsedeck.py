@@ -336,8 +336,10 @@ def integrated_gpu_data(main_gpu):
     if main_gpu is None or main_gpu["vendor"] != "NVIDIA":
         return None
     igpu = next(iter(drm_gpus()), None)
-    if igpu and igpu["usage"] is None and os.name != "nt":
-        igpu["engine_usage"] = igpu_engine_usage(igpu.get("pci") or None)
+    if igpu is not None:
+        igpu["engine_usage"] = None
+        if igpu["usage"] is None and os.name != "nt":
+            igpu["engine_usage"] = igpu_engine_usage(igpu.get("pci") or None)
     return igpu
 
 
