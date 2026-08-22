@@ -8,6 +8,8 @@
 - Add a `GPU` activity column to the TOP RESOURCE USERS table on systems with `nvidia-smi`.
 - Keep every compact-mode panel visible on short terminals by shrinking the GPU panel and its `APPS` list first.
 - Apply `ruff` formatting across the source and gate formatting in CI.
+- Fix fdinfo path resolution so integrated engine scanning actually reads client counters.
+- Fix Windows-only test failures in battery wattage and integrated GPU probes.
 
 ## 0.4.0
 
