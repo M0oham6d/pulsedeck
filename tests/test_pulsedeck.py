@@ -139,7 +139,9 @@ class PulseDeckTests(unittest.TestCase):
         self.assertIsNone(MODULE.number_or_none("[N/A]"))
         self.assertEqual(MODULE.number_or_none("42.5"), 42.5)
 
-    @patch.object(MODULE.subprocess, "run", side_effect=MODULE.subprocess.TimeoutExpired("nvidia-smi", 2))
+    @patch.object(
+        MODULE.subprocess, "run", side_effect=MODULE.subprocess.TimeoutExpired("nvidia-smi", 2)
+    )
     def test_nvidia_gpu_timeout_is_treated_as_unavailable(self, run):
         self.assertIsNone(MODULE.nvidia_gpu_data())
 
@@ -186,9 +188,10 @@ class PulseDeckTests(unittest.TestCase):
         self.assertEqual(MODULE.bytes_value(1024**2), "1.0 MiB")
 
     def test_output_configuration_detects_legacy_encoding(self):
-        with patch.object(
-            MODULE.sys, "stdout", SimpleNamespace(encoding="cp1252")
-        ), patch.dict(MODULE.os.environ, {}, clear=True):
+        with (
+            patch.object(MODULE.sys, "stdout", SimpleNamespace(encoding="cp1252")),
+            patch.dict(MODULE.os.environ, {}, clear=True),
+        ):
             MODULE.configure_output()
             self.assertEqual(MODULE.os.environ["PULSEDECK_ASCII"], "1")
 

@@ -23,6 +23,7 @@ jobs:
       - run: python pulsedeck.py --help
       - run: python pulsedeck.py --once
       - run: ruff check .
+      - run: ruff format --check .
 
   shell:
     runs-on: ubuntu-latest

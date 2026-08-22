@@ -328,11 +328,7 @@ def gpu_snapshot():
 
 def normalize_process_cpu(raw_cpu, logical_cpu_count, total_cpu_usage):
     capacity = min(raw_cpu / max(logical_cpu_count, 1), 100.0)
-    share = (
-        min(capacity / total_cpu_usage * 100, 100.0)
-        if total_cpu_usage > 0.1
-        else 0.0
-    )
+    share = min(capacity / total_cpu_usage * 100, 100.0) if total_cpu_usage > 0.1 else 0.0
     return capacity, share
 
 
@@ -345,7 +341,9 @@ def cpu_data(sensors):
     for entries in sensors.values():
         for sensor in entries:
             label = sensor["label"].lower()
-            if any(token in label for token in ("package", "tdie", "tctl", "cpu temp", "cpu thermal")):
+            if any(
+                token in label for token in ("package", "tdie", "tctl", "cpu temp", "cpu thermal")
+            ):
                 package_sensor = package_sensor or sensor
             match = re.search(r"(?:core|ccd)\s*(\d+)", label)
             if match:
@@ -353,11 +351,7 @@ def cpu_data(sensors):
 
     cores = []
     for item in CPU_TOPOLOGY:
-        values = [
-            logical_usage[index]
-            for index in item["threads"]
-            if index < len(logical_usage)
-        ]
+        values = [logical_usage[index] for index in item["threads"] if index < len(logical_usage)]
         cores.append(
             {
                 **item,
@@ -382,7 +376,15 @@ def cpu_data(sensors):
 def process_data(total_cpu_usage, limit=16):
     rows = []
     logical_cpu_count = psutil.cpu_count(logical=True) or 1
-    attributes = ["pid", "name", "cmdline", "cpu_percent", "memory_percent", "memory_info", "status"]
+    attributes = [
+        "pid",
+        "name",
+        "cmdline",
+        "cpu_percent",
+        "memory_percent",
+        "memory_info",
+        "status",
+    ]
     for process in psutil.process_iter(attributes):
         try:
             info = process.info
@@ -632,25 +634,29 @@ def render_cpu(data, compact=False):
 def render_gpu(data, compact=False):
     gpu = data["gpu"]
     if gpu is None:
-        return Panel(Text("GPU data unavailable", style="dim"), title=" GPU ", border_style="magenta")
+        return Panel(
+            Text("GPU data unavailable", style="dim"), title=" GPU ", border_style="magenta"
+        )
 
     temperature = Text("N/A", style="dim")
     if gpu["temp"] is not None:
         sensor = {"current": gpu["temp"], "critical": 93}
         temperature = Text(f"{gpu['temp']:.0f}°C", style=temperature_style(sensor, 93))
-    first = Text(f"{gpu['vendor']}  {gpu['name']}", style="bold white", overflow="ellipsis", no_wrap=True)
+    first = Text(
+        f"{gpu['vendor']}  {gpu['name']}", style="bold white", overflow="ellipsis", no_wrap=True
+    )
     first.append("   ")
     first.append_text(temperature)
     first.append("   POWER ", style="dim")
-    first.append(
-        f"{gpu['power']:.0f} W" if gpu["power"] is not None else "N/A (driver)"
-    )
+    first.append(f"{gpu['power']:.0f} W" if gpu["power"] is not None else "N/A (driver)")
 
     usage = gpu["usage"]
     used = gpu["memory_used"]
     total = gpu["memory_total"]
     if compact:
-        first = Text(f"{gpu['vendor']}  {gpu['name']}", style="bold white", overflow="ellipsis", no_wrap=True)
+        first = Text(
+            f"{gpu['vendor']}  {gpu['name']}", style="bold white", overflow="ellipsis", no_wrap=True
+        )
         first.append("  GPU ", style="dim")
         if usage is not None:
             first.append(f"{usage:.1f}%", style=usage_style(usage))
@@ -676,11 +682,7 @@ def render_gpu(data, compact=False):
         if processes:
             for process in processes:
                 sm = f"{process['sm']:.0f}%" if process["sm"] is not None else "N/A"
-                memory = (
-                    f"{process['memory']:.0f}%"
-                    if process["memory"] is not None
-                    else "N/A"
-                )
+                memory = f"{process['memory']:.0f}%" if process["memory"] is not None else "N/A"
                 content.append(
                     Text(
                         f"{process['pid']:>8}  {process['command']:<15.15} {sm:>4} {memory:>4}",
@@ -712,11 +714,7 @@ def render_gpu(data, compact=False):
     if processes:
         for process in processes:
             sm = f"{process['sm']:.0f}%" if process["sm"] is not None else "N/A"
-            memory = (
-                f"{process['memory']:.0f}%"
-                if process["memory"] is not None
-                else "N/A"
-            )
+            memory = f"{process['memory']:.0f}%" if process["memory"] is not None else "N/A"
             content.append(
                 Text(
                     f"{process['pid']:>8}  {process['command']:<15.15} {sm:>4} {memory:>4}",
@@ -957,7 +955,9 @@ def prime_process_counters():
 
 
 def arguments():
-    parser = argparse.ArgumentParser(description="PulseDeck live CPU, GPU, memory, sensor and process monitor")
+    parser = argparse.ArgumentParser(
+        description="PulseDeck live CPU, GPU, memory, sensor and process monitor"
+    )
     parser.add_argument("--once", action="store_true", help="render one snapshot and exit")
     return parser.parse_args()
 
